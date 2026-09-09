@@ -164,7 +164,7 @@ Models available on Serverless Inference, as listed on the [available models pag
   </tbody>
 </table>
 
-Provider marks belong to their owners; see [assets/third-party](assets/third-party/) for sources.
+Provider marks belong to their respective owners.
 
 ### GPUs and CPUs
 

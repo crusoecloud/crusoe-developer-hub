@@ -51,3 +51,9 @@ coverage/
 
 # Local tooling
 .claude/
+
+# Asset sources are internal; only rendered images are published
+**/assets/*.md
+**/assets/*.py
+**/assets/**/*.md
+assets/third-party/
