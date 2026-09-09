@@ -8,7 +8,7 @@
 </a>
 
 [![LinkedIn: Crusoe Developers](assets/linkedin-badge.svg)](https://www.linkedin.com/showcase/crusoedev/)
-[![Discord: join the Crusoe developer community](assets/discord-badge.svg)](https://discord.gg/U7dHtcxpE)
+[![Discord: join the Crusoe developer community](assets/discord-badge.svg)](https://discord.gg/tRKs5bMyry)
 
 <a href="https://www.crusoe.ai/developers"><img src="assets/icons/tile-globe.png" alt="" width="20" height="20" align="absmiddle"> Crusoe for Developers</a>&nbsp;&nbsp;|&nbsp;&nbsp;
 <a href="https://docs.crusoecloud.com/"><img src="assets/icons/tile-document.png" alt="" width="20" height="20" align="absmiddle"> Documentation</a>&nbsp;&nbsp;|&nbsp;&nbsp;
