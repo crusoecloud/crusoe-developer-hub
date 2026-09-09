@@ -1,0 +1,93 @@
+model_list:
+  - model_name: glm-5.2
+    litellm_params:
+      model: crusoe/zai/GLM-5.2
+      api_key: os.environ/CRUSOE_API_KEY
+      api_base: os.environ/CRUSOE_API_BASE
+
+  - model_name: glm-5.1
+    litellm_params:
+      model: crusoe/zai/GLM-5.1
+      api_key: os.environ/CRUSOE_API_KEY
+      api_base: os.environ/CRUSOE_API_BASE
+
+  - model_name: nemotron-ultra
+    litellm_params:
+      model: crusoe/nvidia/NVIDIA-Nemotron-3-Ultra-550B
+      api_key: os.environ/CRUSOE_API_KEY
+      api_base: os.environ/CRUSOE_API_BASE
+
+  - model_name: nemotron-super
+    litellm_params:
+      model: crusoe/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B
+      api_key: os.environ/CRUSOE_API_KEY
+      api_base: os.environ/CRUSOE_API_BASE
+
+  - model_name: nemotron-nano
+    litellm_params:
+      model: crusoe/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B
+      api_key: os.environ/CRUSOE_API_KEY
+      api_base: os.environ/CRUSOE_API_BASE
+
+  - model_name: nemotron-nano-omni
+    litellm_params:
+      model: crusoe/nvidia/Nemotron-3-Nano-Omni-Reasoning-30B-A3B
+      api_key: os.environ/CRUSOE_API_KEY
+      api_base: os.environ/CRUSOE_API_BASE
+
+  - model_name: gemma-4
+    litellm_params:
+      model: crusoe/google/gemma-4-31b-it
+      api_key: os.environ/CRUSOE_API_KEY
+      api_base: os.environ/CRUSOE_API_BASE
+
+  - model_name: deepseek-v3
+    litellm_params:
+      model: crusoe/deepseek-ai/DeepSeek-V3-0324
+      api_key: os.environ/CRUSOE_API_KEY
+      api_base: os.environ/CRUSOE_API_BASE
+
+  - model_name: deepseek-v4-pro
+    litellm_params:
+      model: crusoe/deepseek-ai/DeepSeek-V4-Pro
+      api_key: os.environ/CRUSOE_API_KEY
+      api_base: os.environ/CRUSOE_API_BASE
+
+  - model_name: deepseek-v4-flash
+    litellm_params:
+      model: crusoe/deepseek-ai/Deepseek-V4-Flash
+      api_key: os.environ/CRUSOE_API_KEY
+      api_base: os.environ/CRUSOE_API_BASE
+
+  - model_name: llama-3.3-70b
+    litellm_params:
+      model: crusoe/meta-llama/Llama-3.3-70B-Instruct
+      api_key: os.environ/CRUSOE_API_KEY
+      api_base: os.environ/CRUSOE_API_BASE
+
+  - model_name: kimi-k2.6
+    litellm_params:
+      model: crusoe/moonshotai/Kimi-K2.6
+      api_key: os.environ/CRUSOE_API_KEY
+      api_base: os.environ/CRUSOE_API_BASE
+
+  - model_name: gpt-oss-120b
+    litellm_params:
+      model: crusoe/openai/gpt-oss-120b
+      api_key: os.environ/CRUSOE_API_KEY
+      api_base: os.environ/CRUSOE_API_BASE
+
+  - model_name: qwen3-235b
+    litellm_params:
+      model: crusoe/Qwen/Qwen3-235B-A22B-Instruct-2507
+      api_key: os.environ/CRUSOE_API_KEY
+      api_base: os.environ/CRUSOE_API_BASE
+
+litellm_settings:
+  drop_params: true
+  num_retries: 2
+  fallbacks:
+    - glm-5.2: ["llama-3.3-70b"]
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

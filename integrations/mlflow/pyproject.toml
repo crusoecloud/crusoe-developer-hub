@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mlflow-crusoe"
+version = "0.1.1"
+description = "MLflow deployment plugin for Crusoe AI's managed inference API."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [
+    { name = "Emmanuel Acheampong", email = "eacheampong@crusoe.ai" }
+]
+keywords = ["mlflow", "crusoe", "ai", "deployment", "inference"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "mlflow>=2.0",
+    "openai>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21.0",
+    "ruff>=0.1.0",
+]
+
+[project.entry-points."mlflow.deployments"]
+crusoe = "mlflow_crusoe.deployment"
+
+[project.urls]
+Homepage = "https://github.com/crusoecloud/crusoe-developer-hub/tree/main/integrations/mlflow"
+Documentation = "https://docs.crusoecloud.com/managed-inference/overview/index.html"
+
+[tool.setuptools.packages.find]
+include = ["mlflow_crusoe*"]
+
+[tool.ruff]
+target-version = "py39"

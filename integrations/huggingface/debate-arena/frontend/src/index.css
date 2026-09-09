@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: radial-gradient(circle at 20% 20%, #1e1b4b 0%, #0f172a 60%, #020617 100%);
+  color: #f1f5f9;
+  overflow-x: hidden;
+}
+
+/* Speech bubble tail (points downward toward character) */
+.bubble-tail::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -12px;
+  transform: translateX(-50%);
+  border-width: 12px 12px 0 12px;
+  border-style: solid;
+  border-color: currentColor transparent transparent transparent;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,0.25));
+}
+
+/* Streaming caret at end of bubble text */
+.streaming-caret::after {
+  content: '▍';
+  display: inline-block;
+  margin-left: 2px;
+  animation: caret-blink 1s steps(2) infinite;
+  color: currentColor;
+  opacity: 0.7;
+}
+
+@keyframes caret-blink {
+  0%, 50% { opacity: 0.8; }
+  50.01%, 100% { opacity: 0; }
+}
+
+/* Mouth uses transform-origin center for clean scaleY pulsing */
+.mouth-path {
+  transform-origin: center center;
+  transform-box: fill-box;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.15);
+  border-radius: 3px;
+}

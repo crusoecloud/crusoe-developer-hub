@@ -1,0 +1,26 @@
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm-database:main-stable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set a strong LITELLM_MASTER_KEY for production}
+      DATABASE_URL: postgresql://litellm:${POSTGRES_PASSWORD:-litellm}@postgres:5432/litellm
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-litellm}
+      POSTGRES_DB: litellm
+    volumes:
+      - litellm-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  litellm-postgres:

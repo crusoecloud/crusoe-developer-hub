@@ -1,0 +1,56 @@
+"""
+Vector addition: output[i] = x[i] + y[i].
+
+The canonical first kernel: each program instance loads its own slice of
+the input, does the compute, and writes the result back. No communication
+between instances.
+
+Run: python v0_basic.py
+"""
+
+import torch
+import triton
+import triton.language as tl
+
+DEVICE = torch.device("cuda:0")
+
+
+@triton.jit
+def add_kernel(
+    x_ptr,
+    y_ptr,
+    output_ptr,
+    n_elements,
+    BLOCK_SIZE: tl.constexpr,
+):
+    pid = tl.program_id(axis=0)
+    block_start = pid * BLOCK_SIZE
+    offsets = block_start + tl.arange(0, BLOCK_SIZE)
+    mask = offsets < n_elements  # guards the tail when n_elements isn't a multiple of BLOCK_SIZE
+
+    x = tl.load(x_ptr + offsets, mask=mask)
+    y = tl.load(y_ptr + offsets, mask=mask)
+    tl.store(output_ptr + offsets, x + y, mask=mask)
+
+
+def add(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    output = torch.empty_like(x)
+    n_elements = x.numel()
+    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)  # one program per chunk
+    add_kernel[grid](x, y, output, n_elements, BLOCK_SIZE=1024)
+    return output
+
+
+def test_add_kernel(size: int):
+    torch.manual_seed(0)
+    x = torch.randn(size, device=DEVICE)
+    y = torch.randn(size, device=DEVICE)
+
+    triton.testing.assert_close(add(x, y), x + y, atol=1e-3, rtol=1e-3)
+    print(f"size={size:>10}  OK")
+
+
+if __name__ == "__main__":
+    print(f"Running on {DEVICE} - {torch.cuda.get_device_name(DEVICE)}")
+    for n in (1, 128, 1024, 1024 * 1024 + 7):  # includes a non-multiple-of-BLOCK_SIZE tail
+        test_add_kernel(n)

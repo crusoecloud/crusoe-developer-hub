@@ -1,0 +1,3 @@
+# Local generated data and downloaded adapters
+/data/*.jsonl
+/outputs/

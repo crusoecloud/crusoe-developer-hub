@@ -1,0 +1,153 @@
+{
+  "info": {
+    "name": "Crusoe Managed Inference",
+    "description": "OpenAI-compatible API for open-weight models (GLM 5.2, DeepSeek V3, gpt-oss-120b, Gemma 4, Kimi K2.6, Llama 3.3) on Crusoe's AI cloud.\n\nSetup: create an Inference API key in the Crusoe Console (https://console.crusoe.ai/) under Security > Inference API Key, then set the CRUSOE_API_KEY collection variable.\n\nDocs: https://docs.crusoecloud.com/managed-inference/overview\nPricing: https://crusoe.ai/cloud/pricing",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{CRUSOE_API_KEY}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://api.inference.crusoecloud.com/v1",
+      "type": "string"
+    },
+    {
+      "key": "CRUSOE_API_KEY",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "List models",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/models",
+          "host": ["{{baseUrl}}"],
+          "path": ["models"]
+        },
+        "description": "Returns the current model catalog."
+      }
+    },
+    {
+      "name": "Chat completion",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/chat/completions",
+          "host": ["{{baseUrl}}"],
+          "path": ["chat", "completions"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"model\": \"zai/GLM-5.2\",\n  \"messages\": [\n    {\"role\": \"user\", \"content\": \"Hello, how are you?\"}\n  ],\n  \"max_tokens\": 200\n}"
+        },
+        "description": "Basic chat completion with GLM 5.2. Reasoning models return their thinking in the message field named 'reasoning'."
+      }
+    },
+    {
+      "name": "Chat completion (streaming)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/chat/completions",
+          "host": ["{{baseUrl}}"],
+          "path": ["chat", "completions"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"model\": \"zai/GLM-5.2\",\n  \"messages\": [\n    {\"role\": \"user\", \"content\": \"Write a haiku about data centers.\"}\n  ],\n  \"stream\": true\n}"
+        },
+        "description": "Server-sent events stream of completion chunks."
+      }
+    },
+    {
+      "name": "Tool calling",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/chat/completions",
+          "host": ["{{baseUrl}}"],
+          "path": ["chat", "completions"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"model\": \"zai/GLM-5.2\",\n  \"messages\": [\n    {\"role\": \"user\", \"content\": \"What is the weather in Tokyo?\"}\n  ],\n  \"tools\": [\n    {\n      \"type\": \"function\",\n      \"function\": {\n        \"name\": \"get_weather\",\n        \"description\": \"Get the current weather for a city.\",\n        \"parameters\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"city\": {\"type\": \"string\"}\n          },\n          \"required\": [\"city\"]\n        }\n      }\n    }\n  ]\n}"
+        },
+        "description": "The model responds with a tool_calls array instead of content when it decides to call the function."
+      }
+    },
+    {
+      "name": "Reasoning effort (gpt-oss-120b)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/chat/completions",
+          "host": ["{{baseUrl}}"],
+          "path": ["chat", "completions"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"model\": \"openai/gpt-oss-120b\",\n  \"messages\": [\n    {\"role\": \"user\", \"content\": \"How many primes are there below 100?\"}\n  ],\n  \"reasoning_effort\": \"high\"\n}"
+        },
+        "description": "gpt-oss-120b accepts reasoning_effort low, medium, or high, which scales reasoning length. On GLM 5.2, Kimi K2.6, and Gemma 4, reasoning_effort acts as an on/off toggle ('none' disables reasoning)."
+      }
+    },
+    {
+      "name": "Structured output (JSON mode)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/chat/completions",
+          "host": ["{{baseUrl}}"],
+          "path": ["chat", "completions"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"model\": \"google/gemma-4-31b-it\",\n  \"messages\": [\n    {\"role\": \"user\", \"content\": \"List three open-weight LLMs as JSON with fields name and org.\"}\n  ],\n  \"response_format\": {\"type\": \"json_object\"}\n}"
+        },
+        "description": "Request JSON output. Gemma 4 31B is the recommended model for structured output."
+      }
+    }
+  ]
+}

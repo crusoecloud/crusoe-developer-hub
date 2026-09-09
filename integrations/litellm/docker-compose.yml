@@ -1,0 +1,17 @@
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./config/litellm-config.yaml:/app/config.yaml:ro
+    environment:
+      CRUSOE_API_KEY: ${CRUSOE_API_KEY:?set CRUSOE_API_KEY in your environment or .env}
+      CRUSOE_API_BASE: ${CRUSOE_API_BASE:-https://api.inference.crusoecloud.com/v1}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-local-dev-master}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12

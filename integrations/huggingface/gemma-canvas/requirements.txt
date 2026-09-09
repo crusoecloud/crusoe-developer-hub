@@ -1,0 +1,5 @@
+# gradio is installed by HF Spaces via sdk_version in README.md frontmatter.
+openai==1.57.0
+httpx==0.27.2
+Pillow==11.0.0
+python-dotenv==1.0.1

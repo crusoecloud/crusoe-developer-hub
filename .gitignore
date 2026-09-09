@@ -1,0 +1,53 @@
+# Local secrets; preserve intentional templates
+.env
+.env.*
+!.env.example
+!.env.*.example
+!*.env.example
+env.local
+env.*.local
+*.key
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Node
+node_modules/
+coverage/
+*.tsbuildinfo
+.vite/
+
+# Generated local output
+*.log
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Local tooling
+.claude/

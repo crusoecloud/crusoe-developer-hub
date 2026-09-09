@@ -1,0 +1,23 @@
+streamlit==1.38.0
+plotly==5.24.0
+pandas==2.2.2
+
+# LangChain / LangGraph
+langchain==0.3.0
+langchain-openai==0.2.0
+langgraph==0.2.22
+
+# Database
+sqlalchemy==2.0.35
+pg8000==1.31.2
+
+# Collectors
+praw==7.7.1
+tweepy==4.14.0
+httpx==0.27.2
+
+# Utilities
+pydantic-settings==2.5.2
+python-dotenv==1.0.1
+tenacity>=8.1.0,<9
+tiktoken==0.7.0

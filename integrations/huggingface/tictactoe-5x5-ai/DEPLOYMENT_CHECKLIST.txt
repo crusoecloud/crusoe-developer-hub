@@ -1,0 +1,105 @@
+TICTACTOE 5X5 AI - DEPLOYMENT CHECKLIST
+========================================
+
+PROJECT LOCATION:
+  /sessions/lucid-sleepy-ramanujan/mnt/Managed AI Projects/tictactoe-5x5-ai/
+
+FILES CREATED:
+  ✓ app.py (16.5 KB) - Main application with game engine, LLM integration, and Gradio UI
+  ✓ requirements.txt - Python dependencies (gradio>=4.44.0, openai>=1.40.0)
+  ✓ Procfile - Heroku deployment configuration
+  ✓ README.md - Complete documentation
+
+GAME ENGINE FEATURES:
+  ✓ 5x5 board (25 cells total)
+  ✓ 4-in-a-row win condition (not 5)
+  ✓ Horizontal, vertical, and diagonal win detection
+  ✓ Draw detection when board is full (25 moves)
+  ✓ Move validation and parsing (A-E rows, 1-5 columns)
+  ✓ Automatic fallback to random moves if AI returns invalid moves
+  ✓ Move history tracking
+
+LLM INTEGRATION:
+  ✓ OpenAI-compatible Crusoe Foundry API client
+  ✓ Default URL: https://managed-inference-api-proxy.crusoecloud.com/v1
+  ✓ Supported models:
+    - deepseek-ai/DeepSeek-V3-0324
+    - deepseek-ai/DeepSeek-R1-0528
+    - meta-llama/Llama-3.3-70B-Instruct
+    - Qwen/Qwen3-235B-A22B-Instruct-2507
+    - google/gemma-3-12b-it
+  ✓ System prompt: AI responds with ONLY position format (e.g., B3, E1)
+  ✓ Temperature: 0.2, max_tokens: 10
+  ✓ Regex-based move extraction with validation
+  ✓ Fallback to random valid moves on parse failure
+
+UI/UX FEATURES:
+  ✓ Gradio web interface with dark neon theme
+  ✓ Left sidebar: API configuration and model selection
+  ✓ Center: HTML5 Canvas with:
+    - Dark background (#0a0a0a)
+    - Grid lines for 5x5 board
+    - Cyan X marks (#00ffff) with glow effect
+    - Pink O marks (#ff0088) with glow effect
+    - Row labels (A-E) and column labels (1-5)
+    - Last move highlighted with brighter glow
+    - Winning 4-in-a-row highlighted with gold dashed line
+    - Game status overlay
+  ✓ Bottom: Real-time move history log
+  ✓ Automatic canvas updates via JavaScript
+
+CANVAS RENDERING:
+  ✓ window.renderTicTacToe() function
+  ✓ JSON state-based rendering
+  ✓ Board array: 0=empty, 1=X, 2=O
+  ✓ Glow effects for current moves
+  ✓ Win line visualization
+  ✓ Game over status display
+
+DEPLOYMENT READY:
+  ✓ Python 3 syntax validation passed
+  ✓ No missing imports or dependencies
+  ✓ Heroku-compatible configuration
+  ✓ PORT environment variable support
+  ✓ Queue management for concurrent games
+  ✓ Server binding to 0.0.0.0
+
+USAGE:
+
+Local Development:
+  1. Install dependencies: pip install -r requirements.txt
+  2. Run: python app.py
+  3. Open browser: http://localhost:7860
+  4. Enter Crusoe Foundry API URL and API Key
+  5. Select two models and click "Start Game"
+
+Heroku Deployment:
+  1. git init
+  2. heroku create your-app-name
+  3. git push heroku main
+  4. Visit: https://your-app-name.herokuapp.com
+
+API REQUIREMENTS:
+  - Valid Crusoe Foundry API Key
+  - Valid Crusoe Foundry API URL
+  - Access to at least one of the supported models
+
+TESTING:
+  ✓ Game initialization
+  ✓ Move parsing (all 25 positions)
+  ✓ Move validation
+  ✓ Turn switching
+  ✓ Win detection (horizontal, vertical, diagonal)
+  ✓ Draw condition
+  ✓ Board state representation
+  ✓ Valid move listing
+
+PRODUCTION NOTES:
+  - Game runs autonomously between two AI models
+  - Each game completes in 10-25 turns depending on gameplay
+  - Move history is logged for analysis
+  - Canvas updates via JavaScript eliminate need for page reloads
+  - Gradio queue handles concurrent game requests
+  - Error handling with fallback to random moves ensures robustness
+
+STATUS: READY FOR DEPLOYMENT ✓

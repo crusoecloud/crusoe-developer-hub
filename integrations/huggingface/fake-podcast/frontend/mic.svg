@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#a78bfa"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
+    </linearGradient>
+  </defs>
+  <!-- Mic body -->
+  <rect x="22" y="6" width="20" height="32" rx="10" fill="url(#g)"/>
+  <!-- Grille lines -->
+  <line x1="26" y1="14" x2="38" y2="14" stroke="#c4b5fd" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="26" y1="19" x2="38" y2="19" stroke="#c4b5fd" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="26" y1="24" x2="38" y2="24" stroke="#c4b5fd" stroke-width="1.5" stroke-linecap="round"/>
+  <!-- Cradle arc -->
+  <path d="M16 30 Q16 48 32 48 Q48 48 48 30" fill="none" stroke="#7c3aed" stroke-width="3" stroke-linecap="round"/>
+  <!-- Stand -->
+  <line x1="32" y1="48" x2="32" y2="58" stroke="#7c3aed" stroke-width="3" stroke-linecap="round"/>
+  <!-- Base -->
+  <line x1="24" y1="58" x2="40" y2="58" stroke="#7c3aed" stroke-width="3" stroke-linecap="round"/>
+</svg>
