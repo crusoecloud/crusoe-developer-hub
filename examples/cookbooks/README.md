@@ -8,7 +8,6 @@ The existing recipes below focus on connecting a named tool, so their implementa
 
 | <div align="center">Recipe</div> | <div align="center">Primary home</div> |
 | --- | --- |
-| Add web search to a tool-calling loop | [Tavily](../../integrations/tavily/) |
 | Add search and sourced answers to a model workflow | [Linkup](../../integrations/linkup/) |
 | Make requests through a gateway | [LiteLLM request examples](../../integrations/litellm/#clients) |
 

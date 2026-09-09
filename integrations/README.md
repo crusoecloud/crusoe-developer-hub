@@ -17,7 +17,6 @@ The included content column describes what is checked into this repository. Thes
 | Explore interactive apps on Spaces | [Hugging Face](huggingface/README.md) | Gradio, Streamlit, and Docker demos with individual READMEs | Per-demo Python or Docker dependencies and credentials; Hugging Face account for deployment |
 | Configure an editor | [Cursor](cursor/README.md) | Editor setup guide | Cursor, Crusoe Inference API key |
 | Configure an editor | [Zed](zed/README.md) | Editor setup guide and settings JSON | Zed, Crusoe Inference API key |
-| Add web search to an agent | [Tavily](tavily/README.md) | Complete Python recipe in the README | Python, Crusoe and Tavily API keys |
 | Ground answers in search results | [Linkup](linkup/README.md) | Complete Python recipe in the README | Python, Crusoe and Linkup API keys |
 
 ## Start with a request
