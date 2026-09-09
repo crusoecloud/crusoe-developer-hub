@@ -1,12 +1,6 @@
-"""
-Same SiLU kernel as v0, benchmarked against torch.nn.functional.silu.
+"""SiLU benchmarked against torch.nn.functional.silu, reported in GB/s.
 
-SiLU does more math per element than vector add (negate, exp, add, div,
-mul vs. a single add) but touches the same amount of memory (one load, one
-store), so it's a useful data point for how much arithmetic a memory-bound
-kernel can absorb "for free".
-
-Run: python v1_benchmark.py
+Usage: python v1_benchmark.py
 """
 
 import os
@@ -68,7 +62,7 @@ def test_silu_kernel(size: int):
 def benchmark(size, provider):
     x = torch.randn(size, device=DEVICE, dtype=torch.float32)
 
-    quantiles = [0.5, 0.04, 0.95]
+    quantiles = [0.5, 0.2, 0.8]
     if provider == "triton":
         ms, min_ms, max_ms = triton.testing.do_bench(lambda: silu(x), quantiles=quantiles)
     else:

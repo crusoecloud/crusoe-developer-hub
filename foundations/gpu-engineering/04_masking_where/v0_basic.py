@@ -1,13 +1,6 @@
-"""
-Value clipping: output[i] = min(max(x[i], v_min), v_max).
+"""Clipping with tl.where instead of a per-element branch, with a correctness check.
 
-A per-element conditional is the classic case for warp divergence: threads
-in the same warp can land on either side of the bound, and a Python-style
-if/else would force the hardware to run both branches serially. tl.where
-keeps every lane on one instruction stream by computing both candidates and
-selecting per-lane, at the cost of always evaluating both sides.
-
-Run: python v0_basic.py
+Usage: python v0_basic.py
 """
 
 import torch

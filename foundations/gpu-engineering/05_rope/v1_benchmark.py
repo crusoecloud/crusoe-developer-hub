@@ -1,9 +1,6 @@
-"""
-Same RoPE kernel as v0, benchmarked against the chunk/cat reference
-implementation across sequence lengths (feature_dim fixed at a typical
-attention head size).
+"""RoPE kernel benchmarked against a chunk-and-cat PyTorch reference across sequence lengths.
 
-Run: python v1_benchmark.py
+Usage: python v1_benchmark.py
 """
 
 import os
@@ -28,9 +25,6 @@ def rope_kernel(
     BLOCK_SIZE: tl.constexpr,
 ):
     pid = tl.program_id(axis=0)
-    if pid >= seq_len:
-        return
-
     half_dim = feature_dim // 2
     local_idx = tl.arange(0, BLOCK_SIZE)
     mask = local_idx < half_dim
@@ -89,7 +83,7 @@ def test_rope_kernel(seq_len: int, feature_dim: int):
 @triton.testing.perf_report(
     triton.testing.Benchmark(
         x_names=["seq_len"],
-        x_vals=[2 ** i for i in range(6, 16)],  # 64 to 32K positions
+        x_vals=[2**i for i in range(6, 16)],  # 64 to 32K positions
         x_log=True,
         line_arg="provider",
         line_vals=["triton", "torch"],
@@ -104,7 +98,7 @@ def benchmark(seq_len, feature_dim, provider):
     x = torch.randn(seq_len, feature_dim, device=DEVICE, dtype=torch.float32)
     cos, sin = rope_freqs(seq_len, feature_dim)
 
-    quantiles = [0.5, 0.04, 0.95]
+    quantiles = [0.5, 0.2, 0.8]
     if provider == "triton":
         ms, min_ms, max_ms = triton.testing.do_bench(lambda: rope(x, cos, sin), quantiles=quantiles)
     else:

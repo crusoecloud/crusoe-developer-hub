@@ -1,12 +1,6 @@
-"""
-Unfused vs. fused SwiGLU vs. PyTorch, benchmarked head to head.
+"""Unfused SwiGLU, fused SwiGLU, and PyTorch benchmarked together, reported in milliseconds.
 
-Per output element, the unfused path moves 5 values (read gate, write
-intermediate, read intermediate, read value, write output) while the fused
-path moves only 3 (read gate, read value, write output) - a 5:3 ratio that
-should show up directly as a throughput gap between the two.
-
-Run: python v2_benchmark.py
+Usage: python v2_benchmark.py
 """
 
 import os
@@ -87,7 +81,7 @@ def test_swiglu(size: int):
 @triton.testing.perf_report(
     triton.testing.Benchmark(
         x_names=["size"],
-        x_vals=[2 ** i for i in range(11, 26)],  # total elements, must be even
+        x_vals=[2**i for i in range(11, 26)],  # total elements, must be even
         x_log=True,
         line_arg="provider",
         line_vals=["fused", "unfused", "torch"],
@@ -101,10 +95,9 @@ def test_swiglu(size: int):
 def benchmark(size, provider):
     x = torch.randn(size, device=DEVICE, dtype=torch.float32)
 
-    quantiles = [0.5, 0.04, 0.95]
+    quantiles = [0.5, 0.2, 0.8]
     fn = {"fused": swiglu_fused, "unfused": swiglu_unfused, "torch": swiglu_torch}[provider]
-    # raw latency, not derived throughput: fusion's win is fewer bytes moved for the
-    # same output, which shows up directly as lower ms, not as a higher GB/s number.
+    # Report latency: fusion moves fewer bytes for the same output, which shows up as lower ms.
     return triton.testing.do_bench(lambda: fn(x), quantiles=quantiles)
 
 

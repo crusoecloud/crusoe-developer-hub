@@ -1,7 +1,6 @@
-"""
-Same clip kernel as v0, benchmarked against torch.clamp.
+"""Clip kernel benchmarked against torch.clamp, reported in GB/s.
 
-Run: python v1_benchmark.py
+Usage: python v1_benchmark.py
 """
 
 import os
@@ -52,7 +51,7 @@ def test_clip_kernel(size: int, v_min: float = -0.5, v_max: float = 0.5):
 @triton.testing.perf_report(
     triton.testing.Benchmark(
         x_names=["size"],
-        x_vals=[2 ** i for i in range(10, 25)],
+        x_vals=[2**i for i in range(10, 25)],
         x_log=True,
         line_arg="provider",
         line_vals=["triton", "torch"],
@@ -66,7 +65,7 @@ def test_clip_kernel(size: int, v_min: float = -0.5, v_max: float = 0.5):
 def benchmark(size, provider):
     x = torch.randn(size, device=DEVICE, dtype=torch.float32)
 
-    quantiles = [0.5, 0.04, 0.95]
+    quantiles = [0.5, 0.2, 0.8]
     if provider == "triton":
         ms, min_ms, max_ms = triton.testing.do_bench(lambda: clip(x, -0.5, 0.5), quantiles=quantiles)
     else:

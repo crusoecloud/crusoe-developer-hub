@@ -6,7 +6,7 @@ Choose [examples](../examples/) when you want to complete a specific task, such 
 
 | <div align="center">Track</div> | <div align="center">What you can find here</div> | <div align="center">Status and prerequisites</div> |
 |---|---|---|
-| [GPU engineering](./gpu-engineering/) | Triton kernels for vector addition, SiLU, fused SwiGLU, masking, and rotary positional embeddings, with correctness checks and benchmarks | Available. Python, `uv`, and an NVIDIA GPU; start with the track's setup instructions |
+| [GPU programming with Triton](./gpu-engineering/) | A tutorial on how GPUs execute code and how memory is organized, then Triton kernels for vector addition, SiLU, fused SwiGLU, masking, and rotary positional embeddings, with correctness checks and benchmarks | Available. Python, `uv`, and an NVIDIA GPU; start with the track's setup instructions |
 | [Post-training](./post-training/) | Two notebooks explaining quantization, LoRA, and QLoRA through PyTorch implementations and a model fine-tune | Available. Python, `uv`, and an NVIDIA GPU for the full sequence; no Crusoe API key needed |
 | [AI engineering](./ai-eng/) | Planned lessons on RAG, tool calling, agents, agent loops, graph-based workflows, agent harnesses, and evaluation | Planned. Scope only; no lessons or runnable exercises yet |
 | [Cloud](./cloud/) | Planned lessons on storage, customer-managed keys (CMK), Slurm, and related infrastructure concepts | Planned. Scope only; no lessons or runnable exercises yet |

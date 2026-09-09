@@ -1,15 +1,6 @@
-"""
-Rotary Positional Embedding (RoPE), shared-frequency / LLaMA-style.
+"""Rotary positional embedding in the LLaMA layout, one program per sequence position, with a correctness check.
 
-Each row m of x is split into two halves; feature i pairs with feature
-i + feature_dim // 2 and both share one rotation angle m * omega_j. This is
-a coordinate-mapping problem rather than a compute one: x has stride
-feature_dim per row, but the precomputed cos/sin tables have stride
-feature_dim // 2, so the offset arithmetic for each tensor differs.
-
-One program instance per sequence position.
-
-Run: python v0_basic.py
+Usage: python v0_basic.py
 """
 
 import torch
@@ -30,9 +21,6 @@ def rope_kernel(
     BLOCK_SIZE: tl.constexpr,
 ):
     pid = tl.program_id(axis=0)
-    if pid >= seq_len:
-        return
-
     half_dim = feature_dim // 2
     local_idx = tl.arange(0, BLOCK_SIZE)
     mask = local_idx < half_dim

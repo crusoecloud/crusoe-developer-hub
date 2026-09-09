@@ -1,11 +1,6 @@
-"""
-SiLU activation: silu(x) = x * sigmoid(x).
+"""SiLU activation, silu(x) = x * sigmoid(x), with a correctness check.
 
-Still embarrassingly parallel like vector add, but the compute step now
-chains several arithmetic ops (negate, exp, add, div, mul) entirely in
-registers before the single store.
-
-Run: python v0_basic.py
+Usage: python v0_basic.py
 """
 
 import torch

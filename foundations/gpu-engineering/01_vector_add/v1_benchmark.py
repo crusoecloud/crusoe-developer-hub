@@ -1,8 +1,6 @@
-"""
-Same vector-add kernel as v0, now benchmarked against PyTorch's own
-elementwise add across a range of sizes.
+"""Vector addition benchmarked against torch's add across sizes, reported in GB/s.
 
-Run: python v1_benchmark.py
+Usage: python v1_benchmark.py
 """
 
 import os
@@ -68,7 +66,7 @@ def benchmark(size, provider):
     x = torch.randn(size, device=DEVICE, dtype=torch.float32)
     y = torch.randn(size, device=DEVICE, dtype=torch.float32)
 
-    quantiles = [0.5, 0.04, 0.95]
+    quantiles = [0.5, 0.2, 0.8]
     if provider == "triton":
         ms, min_ms, max_ms = triton.testing.do_bench(lambda: add(x, y), quantiles=quantiles)
     else:

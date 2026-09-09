@@ -1,12 +1,6 @@
-"""
-Same vector-add kernel as v0, this time inspecting what the compiler
-produces at each stage of the lowering pipeline (TTIR -> TTGIR -> LLIR -> PTX).
+"""Vector addition, writing each compiler stage (TTIR, TTGIR, LLIR, PTX) to results/.
 
-A kernel launch returns a compiled-kernel object whose `.asm` dict holds the
-source for every stage. Dumping them to disk lets you grep through them
-without flooding the terminal.
-
-Run: python v2_kernel_inspection.py
+Usage: python v2_kernel_inspection.py
 """
 
 import os

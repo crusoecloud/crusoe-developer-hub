@@ -1,12 +1,6 @@
-"""
-SwiGLU, fused: swiglu(x) = silu(gate) * value, where `gate` and `value` are
-the two contiguous halves of x.
+"""SwiGLU as one kernel; the intermediate never leaves registers.
 
-One kernel launch. Both halves are loaded, the SiLU activation and the
-multiply happen entirely in registers, and only the final result is stored -
-no intermediate ever touches global memory.
-
-Run: python v1_fused.py
+Usage: python v1_fused.py
 """
 
 import torch

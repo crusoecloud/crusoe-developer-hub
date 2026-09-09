@@ -1,13 +1,6 @@
-"""
-SwiGLU, naive/unfused: swiglu(x) = silu(gate) * value, where `gate` and
-`value` are the two contiguous halves of x.
+"""SwiGLU as two kernels, silu then multiply; the intermediate round-trips through global memory.
 
-Two separate kernel launches, exactly like chaining `temp = silu(gate)` then
-`output = temp * value` in PyTorch. The intermediate `temp` gets written to
-and read back from global memory between the two launches - the round trip
-that v1_fused eliminates.
-
-Run: python v0_unfused.py
+Usage: python v0_unfused.py
 """
 
 import torch
@@ -45,8 +38,8 @@ def swiglu_unfused(x: torch.Tensor) -> torch.Tensor:
     output = torch.empty_like(gate)
     grid = lambda meta: (triton.cdiv(half, meta["BLOCK_SIZE"]),)
 
-    silu_kernel[grid](gate, intermediate, half, BLOCK_SIZE=1024)      # write intermediate
-    mul_kernel[grid](intermediate, value, output, half, BLOCK_SIZE=1024)  # read it back
+    silu_kernel[grid](gate, intermediate, half, BLOCK_SIZE=1024)
+    mul_kernel[grid](intermediate, value, output, half, BLOCK_SIZE=1024)
     return output
 
 
