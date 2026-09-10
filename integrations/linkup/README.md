@@ -4,7 +4,7 @@ Pair a Crusoe-hosted model with the [Linkup](https://linkup.so) search API to an
 
 ## Prerequisites
 
-- A Crusoe Inference API key from the [Crusoe Console](https://console.crusoe.ai/) (**Security > Inference API Key**)
+- A Crusoe Inference API key from the [Crusoe Console](https://console.crusoecloud.com/) (**Security > Inference API Key**)
 - A Linkup API key from [app.linkup.so](https://app.linkup.so)
 
 ```bash

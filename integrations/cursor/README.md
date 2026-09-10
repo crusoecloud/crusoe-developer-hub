@@ -4,7 +4,7 @@ Use Crusoe Managed Inference models in [Cursor](https://cursor.com) by overridin
 
 ## Prerequisites
 
-- A Crusoe account and an Inference API key, created in the [Crusoe Console](https://console.crusoe.ai/) under **Security > Inference API Key**
+- A Crusoe account and an Inference API key, created in the [Crusoe Console](https://console.crusoecloud.com/) under **Security > Inference API Key**
 - Cursor installed ([cursor.com](https://cursor.com))
 
 ## Setup

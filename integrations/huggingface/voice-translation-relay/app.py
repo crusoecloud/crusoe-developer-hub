@@ -52,7 +52,7 @@ async def transcribe_with_realtime(
 
         audio_b64 = base64.b64encode(audio_data.tobytes()).decode()
 
-        url = f"wss://managed-inference-api-proxy.crusoecloud.com/v1/realtime?model={voicechat_model}"
+        url = f"wss://api.inference.crusoecloud.com/v1/realtime?model={voicechat_model}"
         headers = {
             "Authorization": f"Bearer {api_key}",
             "OpenAI-Beta": "realtime=v1"
@@ -389,7 +389,7 @@ def build_ui():
 
                 api_url = gr.Textbox(
                     label="API URL",
-                    value="https://managed-inference-api-proxy.crusoecloud.com/v1",
+                    value="https://api.inference.crusoecloud.com/v1",
                     interactive=True,
                     lines=1
                 )

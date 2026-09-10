@@ -190,7 +190,7 @@ client = OpenAI(
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="https://managed-inference-api-proxy.crusoecloud.com/v1/",
+    base_url="https://api.inference.crusoecloud.com/v1/",
     api_key="YOUR_CRUSOE_API_KEY",
 )
 
@@ -217,7 +217,7 @@ super_response = client.chat.completions.create(
 import OpenAI from 'openai';
 
 const client = new OpenAI({
-  baseURL: 'https://managed-inference-api-proxy.crusoecloud.com/v1/',
+  baseURL: 'https://api.inference.crusoecloud.com/v1/',
   apiKey: 'YOUR_CRUSOE_API_KEY',
 });
 

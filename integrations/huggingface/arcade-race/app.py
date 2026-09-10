@@ -18,7 +18,7 @@ from openai import OpenAI
 
 CRUSOE_API_BASE = os.getenv(
     "CRUSOE_API_BASE",
-    "https://managed-inference-api-proxy.crusoecloud.com/v1/",
+    "https://api.inference.crusoecloud.com/v1/",
 )
 
 AVAILABLE_MODELS = [

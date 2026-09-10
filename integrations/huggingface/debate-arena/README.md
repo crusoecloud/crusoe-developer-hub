@@ -68,7 +68,7 @@ Each persona has a color, emoji, and personality prompt (see `backend/prompts.py
 
 ## Configuration
 
-- **Endpoint:** `https://managed-inference-api-proxy.crusoecloud.com/v1/`
+- **Endpoint:** `https://api.inference.crusoecloud.com/v1/`
 - **Model:** `google/gemma-4-31b-it`
 - **Env vars:**
   - `CRUSOE_API_KEY` (required) — set as a **HuggingFace Space Secret** for deployment, or create a local `.env` file for development

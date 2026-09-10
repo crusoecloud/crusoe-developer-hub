@@ -11,7 +11,7 @@
 1. Visit [Crusoe Foundry](https://crusoecloud.com)
 2. Create an account or log in
 3. Generate an API key
-4. Note the API endpoint (typically `https://managed-inference-api-proxy.crusoecloud.com/v1`)
+4. Note the API endpoint (typically `https://api.inference.crusoecloud.com/v1`)
 
 ## 2. Install Dependencies
 
@@ -47,7 +47,7 @@ Open your browser to `http://localhost:7860`
 
 Example configuration:
 ```
-API URL: https://managed-inference-api-proxy.crusoecloud.com/v1
+API URL: https://api.inference.crusoecloud.com/v1
 API Key: [your-secret-key-here]
 Player 1: deepseek-ai/DeepSeek-V3-0324
 Player 2: meta-llama/Llama-3.3-70B-Instruct

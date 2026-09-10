@@ -6,7 +6,7 @@ load_dotenv()
 CRUSOE_API_KEY = os.getenv("CRUSOE_API_KEY", "no-key-set")
 CRUSOE_API_BASE = os.getenv(
     "CRUSOE_API_BASE",
-    "https://managed-inference-api-proxy.crusoecloud.com/v1/",
+    "https://api.inference.crusoecloud.com/v1/",
 )
 VOICECHAT_API_BASE = os.getenv(
     "VOICECHAT_API_BASE",

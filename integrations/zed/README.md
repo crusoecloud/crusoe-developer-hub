@@ -4,7 +4,7 @@ Use Crusoe Managed Inference models in [Zed](https://zed.dev)'s AI features (Zed
 
 ## Prerequisites
 
-- A Crusoe account and an Inference API key, created in the [Crusoe Console](https://console.crusoe.ai/) under **Security > Inference API Key**
+- A Crusoe account and an Inference API key, created in the [Crusoe Console](https://console.crusoecloud.com/) under **Security > Inference API Key**
 - Zed installed ([zed.dev](https://zed.dev))
 
 ## Setup via the UI

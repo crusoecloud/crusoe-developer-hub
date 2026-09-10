@@ -20,7 +20,7 @@ Set your Crusoe API key:
 export CRUSOE_API_KEY="your-api-key"
 ```
 
-You can generate one from the [Crusoe Console](https://console.crusoe.ai/) under **Security > Inference API Key**.
+You can generate one from the [Crusoe Console](https://console.crusoecloud.com/) under **Security > Inference API Key**.
 
 ## Usage
 
@@ -119,4 +119,4 @@ See the [Crusoe docs](https://docs.crusoecloud.com/managed-inference/overview/in
 
 - [Crusoe Managed Inference Docs](https://docs.crusoecloud.com/managed-inference/overview/index.html)
 - [MLflow Deployment Plugins](https://mlflow.org/docs/latest/ml/plugins/)
-- [Crusoe Console](https://console.crusoe.ai/)
+- [Crusoe Console](https://console.crusoecloud.com/)

@@ -16,7 +16,7 @@ st.set_page_config(
 
 CRUSOE_API_KEY = os.environ.get("CRUSOE_API_KEY")
 NEWSAPI_KEY = os.environ.get("NEWSAPI_KEY")
-CRUSOE_BASE_URL = "https://managed-inference-api-proxy.crusoecloud.com/v1/"
+CRUSOE_BASE_URL = "https://api.inference.crusoecloud.com/v1/"
 
 # All text models available on Crusoe Managed Inference
 MODELS = {

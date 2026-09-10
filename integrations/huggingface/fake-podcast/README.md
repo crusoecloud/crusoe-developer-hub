@@ -13,7 +13,7 @@ license: mit
 
 Generate continuous AI podcast conversations between two hosts powered by different LLMs on **Crusoe Cloud Foundry**. Each host has a distinct personality and voice — they talk to each other for up to 20 minutes, with real text-to-speech audio.
 
-**Live demo:** [https://huggingface.co/spaces/eacheampong/fake-podcast](https://huggingface.co/spaces/eacheampong/fake-podcast)
+**Live demo:** [https://huggingface.co/crusoeai/spaces](https://huggingface.co/crusoeai/spaces)
 
 ---
 
@@ -118,7 +118,7 @@ fake-podcast/
 ### 1. Clone and configure
 
 ```bash
-git clone https://huggingface.co/spaces/eacheampong/fake-podcast
+git clone https://huggingface.co/spaces/crusoeai/<space-name>
 cd fake-podcast
 
 # Set up environment
@@ -244,7 +244,7 @@ All LLM calls use the OpenAI-compatible SDK:
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="https://managed-inference-api-proxy.crusoecloud.com/v1/",
+    base_url="https://api.inference.crusoecloud.com/v1/",
     api_key="YOUR_CRUSOE_API_KEY",
 )
 
@@ -330,7 +330,7 @@ The backend is framework-agnostic. Key integration points:
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `CRUSOE_API_KEY` | **Yes** | — | Your Crusoe Cloud API key |
-| `CRUSOE_API_BASE` | No | `https://managed-inference-api-proxy.crusoecloud.com/v1/` | LLM inference endpoint |
+| `CRUSOE_API_BASE` | No | `https://api.inference.crusoecloud.com/v1/` | LLM inference endpoint |
 | `VOICECHAT_API_BASE` | No | (placeholder) | Reserved for future Crusoe VoiceChat integration |
 
 ---

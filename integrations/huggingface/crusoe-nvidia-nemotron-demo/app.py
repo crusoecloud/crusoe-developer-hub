@@ -17,7 +17,7 @@ from openai import OpenAI
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-CRUSOE_BASE_URL = os.environ.get("CRUSOE_API_BASE", "https://managed-inference-api-proxy.crusoecloud.com/v1/")
+CRUSOE_BASE_URL = os.environ.get("CRUSOE_API_BASE", "https://api.inference.crusoecloud.com/v1/")
 CRUSOE_API_KEY = os.environ.get("CRUSOE_API_KEY", "no-key-required")
 
 NANO_MODEL = "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"

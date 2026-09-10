@@ -173,7 +173,7 @@ Edit `agent/pipeline.py` — the analysis prompt expects JSON output with: `sent
 Edit `config.py` to point at Crusoe's endpoint:
 
 ```python
-OPENAI_BASE_URL = "https://managed-inference-api-proxy.crusoecloud.com/v1/"
+OPENAI_BASE_URL = "https://api.inference.crusoecloud.com/v1/"
 ```
 
 And update `agent/models.py` model IDs to match Crusoe's registry.

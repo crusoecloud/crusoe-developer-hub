@@ -75,7 +75,7 @@ User uploads image + types question
 | Variable | Default | Purpose |
 |---|---|---|
 | `CRUSOE_API_KEY` | *(required)* | Crusoe Foundry auth |
-| `CRUSOE_API_BASE` | `https://managed-inference-api-proxy.crusoecloud.com/v1/` | Endpoint override |
+| `CRUSOE_API_BASE` | `https://api.inference.crusoecloud.com/v1/` | Endpoint override |
 | `GEMMA_MODEL` | `google/gemma-4-31b-it` | Model override (`DEBATE_MODEL` also accepted as legacy fallback) |
 | `PORT` | `7860` | HF Spaces port |
 

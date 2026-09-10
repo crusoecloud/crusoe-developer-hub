@@ -21,7 +21,7 @@ GAME ENGINE FEATURES:
 
 LLM INTEGRATION:
   ✓ OpenAI-compatible Crusoe Foundry API client
-  ✓ Default URL: https://managed-inference-api-proxy.crusoecloud.com/v1
+  ✓ Default URL: https://api.inference.crusoecloud.com/v1
   ✓ Supported models:
     - deepseek-ai/DeepSeek-V3-0324
     - deepseek-ai/DeepSeek-R1-0528

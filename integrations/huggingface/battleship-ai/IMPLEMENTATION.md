@@ -19,7 +19,7 @@
 
 ### LLM Integration
 - OpenAI-compatible API client
-- Crusoe Foundry API URL support (default: https://managed-inference-api-proxy.crusoecloud.com/v1)
+- Crusoe Foundry API URL support (default: https://api.inference.crusoecloud.com/v1)
 - 5 model options:
   - deepseek-ai/DeepSeek-V3-0324
   - deepseek-ai/DeepSeek-R1-0528

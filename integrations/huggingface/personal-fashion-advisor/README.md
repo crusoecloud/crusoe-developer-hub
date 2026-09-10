@@ -72,7 +72,7 @@ Optionally override the endpoint:
 
 | Name | Default |
 |------|---------|
-| `CRUSOE_BASE_URL` | `https://managed-inference-api-proxy.crusoecloud.com/v1/` |
+| `CRUSOE_BASE_URL` | `https://api.inference.crusoecloud.com/v1/` |
 
 ---
 

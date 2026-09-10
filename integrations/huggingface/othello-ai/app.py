@@ -5,7 +5,7 @@ from openai import OpenAI
 import random
 import time
 
-API_URL = os.environ.get("API_URL", "https://managed-inference-api-proxy.crusoecloud.com/v1")
+API_URL = os.environ.get("API_URL", "https://api.inference.crusoecloud.com/v1")
 API_KEY = os.environ.get("API_KEY", "")
 
 CRUSOE_MODELS = [

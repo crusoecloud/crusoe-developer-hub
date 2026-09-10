@@ -4,7 +4,7 @@ import os
 from typing import Any, Dict, Optional
 
 
-DEFAULT_API_BASE = "https://managed-inference-api-proxy.crusoecloud.com/v1"
+DEFAULT_API_BASE = "https://api.inference.crusoecloud.com/v1"
 DEFAULT_MODEL = "meta-llama/Llama-3.3-70B-Instruct"
 DEFAULT_MAX_TOKENS = 1024
 DEFAULT_TEMPERATURE = 0.1

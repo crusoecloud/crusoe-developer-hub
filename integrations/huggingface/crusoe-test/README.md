@@ -105,7 +105,7 @@ Set these in **Settings → Variables and secrets** in your HF Space:
 ## Local Development
 
 ```bash
-git clone https://huggingface.co/spaces/eacheampong/crusoe-test
+git clone https://huggingface.co/spaces/crusoeai/<space-name>
 cd crusoe-test
 
 # Set your API keys

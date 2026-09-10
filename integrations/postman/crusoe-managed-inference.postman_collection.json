@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Crusoe Managed Inference",
-    "description": "OpenAI-compatible API for open-weight models (GLM 5.2, DeepSeek V3, gpt-oss-120b, Gemma 4, Kimi K2.6, Llama 3.3) on Crusoe's AI cloud.\n\nSetup: create an Inference API key in the Crusoe Console (https://console.crusoe.ai/) under Security > Inference API Key, then set the CRUSOE_API_KEY collection variable.\n\nDocs: https://docs.crusoecloud.com/managed-inference/overview\nPricing: https://crusoe.ai/cloud/pricing",
+    "description": "OpenAI-compatible API for open-weight models (GLM 5.2, DeepSeek V3, gpt-oss-120b, Gemma 4, Kimi K2.6, Llama 3.3) on Crusoe's AI cloud.\n\nSetup: create an Inference API key in the Crusoe Console (https://console.crusoecloud.com/) under Security > Inference API Key, then set the CRUSOE_API_KEY collection variable.\n\nDocs: https://docs.crusoecloud.com/managed-inference/overview\nPricing: https://crusoe.ai/cloud/pricing",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {

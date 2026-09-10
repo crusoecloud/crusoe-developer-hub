@@ -203,7 +203,7 @@ Respond with ONLY one word: up, down, left, or right"""
 # CONFIG (all from environment / defaults)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-API_URL = os.environ.get("API_URL", "https://managed-inference-api-proxy.crusoecloud.com/v1")
+API_URL = os.environ.get("API_URL", "https://api.inference.crusoecloud.com/v1")
 API_KEY = os.environ.get("API_KEY", "")
 GRID_SIZE = int(os.environ.get("GRID_SIZE", "20"))
 MAX_TURNS = int(os.environ.get("MAX_TURNS", "200"))

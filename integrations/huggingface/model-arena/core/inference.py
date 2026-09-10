@@ -29,7 +29,7 @@ def get_client() -> OpenAI:
     if not api_key:
         raise ValueError("CRUSOE_API_KEY environment variable is not set")
     return OpenAI(
-        base_url="https://managed-inference-api-proxy.crusoecloud.com/v1/",
+        base_url="https://api.inference.crusoecloud.com/v1/",
         api_key=api_key,
     )
 

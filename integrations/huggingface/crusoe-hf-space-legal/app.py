@@ -11,7 +11,7 @@ from openai import OpenAI
 
 # ── Crusoe Foundry client ─────────────────────────────────────────────────────
 CRUSOE_API_KEY = os.environ.get("CRUSOE_API_KEY", "YOUR_API_KEY_HERE")
-CRUSOE_BASE_URL = os.environ.get("CRUSOE_BASE_URL", "https://managed-inference-api-proxy.crusoecloud.com/v1/")
+CRUSOE_BASE_URL = os.environ.get("CRUSOE_BASE_URL", "https://api.inference.crusoecloud.com/v1/")
 AVAILABLE_MODELS = [
     "Qwen/Qwen3-235B-A22B-Instruct-2507",
     "deepseek-ai/DeepSeek-R1-0528",

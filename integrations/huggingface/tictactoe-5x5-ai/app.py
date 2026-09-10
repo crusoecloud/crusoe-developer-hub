@@ -6,7 +6,7 @@ from typing import Optional, Tuple, List
 import gradio as gr
 from openai import OpenAI
 
-API_URL = os.environ.get("API_URL", "https://managed-inference-api-proxy.crusoecloud.com/v1")
+API_URL = os.environ.get("API_URL", "https://api.inference.crusoecloud.com/v1")
 API_KEY = os.environ.get("API_KEY", "")
 
 CRUSOE_MODELS = [

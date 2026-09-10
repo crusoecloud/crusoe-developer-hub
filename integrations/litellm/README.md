@@ -105,8 +105,6 @@ The real `CRUSOE_API_KEY` never leaves the gateway host.
 - **OpenAI SDK** — [examples/openai_sdk.py](examples/openai_sdk.py)
 - **CrewAI** — [examples/crewai_demo.py](examples/crewai_demo.py) (CrewAI also
   supports Crusoe directly via LiteLLM's `crusoe/` prefix)
-- **deep-repo-agent** — [examples/deep-repo-agent.md](examples/deep-repo-agent.md):
-  a full tool-calling agent routed through the gateway with zero code changes
 
 ## Configuration
 

@@ -14,7 +14,7 @@ A Postman collection covering the Crusoe Managed Inference API (OpenAI-compatibl
 ## Setup
 
 1. Import [crusoe-managed-inference.postman_collection.json](crusoe-managed-inference.postman_collection.json) into Postman (File > Import).
-2. Create an Inference API key in the [Crusoe Console](https://console.crusoe.ai/) under **Security > Inference API Key**.
+2. Create an Inference API key in the [Crusoe Console](https://console.crusoecloud.com/) under **Security > Inference API Key**.
 3. Set the `CRUSOE_API_KEY` collection variable (Collection > Variables). Auth is bearer-token at the collection level, so every request inherits it.
 
 ## Publishing options

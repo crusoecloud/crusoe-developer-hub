@@ -40,7 +40,7 @@ Real-time speech translation powered by NVIDIA Nemotron VoiceChat running on Cru
 
 ### Crusoe Foundry Integration
 
-- **API Endpoint**: `https://managed-inference-api-proxy.crusoecloud.com/v1`
+- **API Endpoint**: `https://api.inference.crusoecloud.com/v1`
 - **VoiceChat Model**: `nvidia/nemotron-3-voicechat` (WebSocket `/realtime` API)
 - **Translation Models**:
   - DeepSeek-V3-0324
@@ -96,7 +96,7 @@ Before using the app:
 The app connects to Nemotron VoiceChat using OpenAI's Realtime Protocol:
 
 ```
-wss://managed-inference-api-proxy.crusoecloud.com/v1/realtime?model=nvidia/nemotron-3-voicechat
+wss://api.inference.crusoecloud.com/v1/realtime?model=nvidia/nemotron-3-voicechat
 ```
 
 Key events:

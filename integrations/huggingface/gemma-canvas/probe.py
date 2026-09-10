@@ -20,7 +20,7 @@ TEST_IMAGE_URL = (
 MODEL = os.getenv("GEMMA_MODEL") or os.getenv("DEBATE_MODEL", "google/gemma-4-31b-it")
 BASE_URL = os.getenv(
     "CRUSOE_API_BASE",
-    "https://managed-inference-api-proxy.crusoecloud.com/v1/",
+    "https://api.inference.crusoecloud.com/v1/",
 )
 
 api_key = os.environ.get("CRUSOE_API_KEY")

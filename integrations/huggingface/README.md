@@ -8,7 +8,7 @@ Each folder contains a Gradio, Streamlit, or Docker app and its Space metadata. 
 
 | Demo | Description | SDK | Space link |
 |------|-------------|-----|------------|
-| [one-shot-deploy](one-shot-deploy/) | Describe a demo in plain English → a multi-model agent writes the code and ships it to HF Spaces | Docker | [demo_agent](https://huggingface.co/spaces/eacheampong/demo_agent) |
+| [one-shot-deploy](one-shot-deploy/) | Describe a demo in plain English → a multi-model agent writes the code and ships it to HF Spaces | Docker | [demo_agent](https://huggingface.co/crusoeai/spaces) |
 | [model-arena](model-arena/) | Compare, cost, and crash-test open-source LLMs on Crusoe Managed AI | Streamlit | [foundry-model-arena](https://huggingface.co/spaces/crusoeai/foundry-model-arena) |
 | [arcade-race](arcade-race/) | Race four LLMs to generate playable 80s arcade games | Gradio | [pixel-prix](https://huggingface.co/spaces/crusoeai/pixel-prix) |
 | [debate-arena](debate-arena/) | Two Gemma personas debate any topic with live-streamed speech bubbles | Docker | [debate-arena](https://huggingface.co/spaces/crusoeai/debate-arena) |
@@ -44,7 +44,7 @@ Choose a demo and read its README before installing its dependencies. Many demos
 export CRUSOE_API_KEY="your-api-key"
 ```
 
-Obtain a key through the [Crusoe Console](https://console.crusoe.ai/). Configuration differs between apps:
+Obtain a key through the [Crusoe Console](https://console.crusoecloud.com/). Configuration differs between apps:
 
 | Demo | Configuration to check |
 |---|---|

@@ -6,13 +6,13 @@ services:
         condition: service_healthy
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set a strong LITELLM_MASTER_KEY for production}
-      DATABASE_URL: postgresql://litellm:${POSTGRES_PASSWORD:-litellm}@postgres:5432/litellm
+      DATABASE_URL: postgresql://litellm:${POSTGRES_PASSWORD:?set a strong POSTGRES_PASSWORD for production}@postgres:5432/litellm
 
   postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: litellm
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-litellm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set a strong POSTGRES_PASSWORD for production}
       POSTGRES_DB: litellm
     volumes:
       - litellm-postgres:/var/lib/postgresql/data

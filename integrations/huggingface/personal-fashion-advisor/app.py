@@ -14,7 +14,7 @@ MODEL_OPTIONS = {
 
 client = OpenAI(
     api_key=os.environ.get("CRUSOE_API_KEY"),
-    base_url=os.environ.get("CRUSOE_BASE_URL", "https://managed-inference-api-proxy.crusoecloud.com/v1/"),
+    base_url=os.environ.get("CRUSOE_BASE_URL", "https://api.inference.crusoecloud.com/v1/"),
 )
 
 st.set_page_config(page_title=TITLE, page_icon="👗", layout="centered")

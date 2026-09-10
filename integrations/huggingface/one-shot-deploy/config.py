@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 CRUSOE_API_KEY = os.environ.get("CRUSOE_API_KEY", "")
-CRUSOE_BASE_URL = os.environ.get("CRUSOE_BASE_URL", "https://managed-inference-api-proxy.crusoecloud.com/v1/")
+CRUSOE_BASE_URL = os.environ.get("CRUSOE_BASE_URL", "https://api.inference.crusoecloud.com/v1/")
 
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
 HF_USERNAME = os.environ.get("HF_USERNAME", "")

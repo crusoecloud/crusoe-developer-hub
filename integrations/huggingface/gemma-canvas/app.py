@@ -15,7 +15,7 @@ from PIL import Image
 MODEL = os.getenv("GEMMA_MODEL") or os.getenv("DEBATE_MODEL", "google/gemma-4-31b-it")
 CRUSOE_API_BASE = os.getenv(
     "CRUSOE_API_BASE",
-    "https://managed-inference-api-proxy.crusoecloud.com/v1/",
+    "https://api.inference.crusoecloud.com/v1/",
 )
 
 SYSTEM_PROMPT = (

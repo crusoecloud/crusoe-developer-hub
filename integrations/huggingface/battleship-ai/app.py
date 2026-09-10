@@ -13,7 +13,7 @@ from openai import OpenAI
 # CONFIGURATION
 # ============================================================================
 
-API_URL = os.environ.get("API_URL", "https://managed-inference-api-proxy.crusoecloud.com/v1")
+API_URL = os.environ.get("API_URL", "https://api.inference.crusoecloud.com/v1")
 API_KEY = os.environ.get("API_KEY", "")
 AVAILABLE_MODELS = [
     "deepseek-ai/DeepSeek-V3-0324",

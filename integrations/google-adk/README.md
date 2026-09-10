@@ -8,7 +8,7 @@ Crusoe exposes an OpenAI-compatible API and is a supported [LiteLLM](https://doc
 
 Use Python 3.10 or later with an activated virtual environment, as described in the [ADK Python quickstart](https://google.github.io/adk-docs/get-started/python/).
 
-1. Create an account at the [Crusoe Console](https://console.crusoe.ai/) and generate an Inference API key under **Security > Inference API Key**.
+1. Create an account at the [Crusoe Console](https://console.crusoecloud.com/) and generate an Inference API key under **Security > Inference API Key**.
 2. From the developer hub repository root, enter this integration and install its dependencies:
 
 ```bash
