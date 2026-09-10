@@ -64,7 +64,7 @@ Models available on Serverless Inference, as listed on the [available models pag
   </thead>
   <tbody>
     <tr>
-      <td rowspan="3"><div align="center"><img src="assets/icons/logo-deepseek.png" alt="" width="28" height="28"><br>DeepSeek</div></td>
+      <td rowspan="3"><div align="center">DeepSeek</div></td>
       <td><code>deepseek-ai/DeepSeek-V4-Pro</code></td>
       <td><div align="center">Instruct</div></td>
       <td><div align="center">1M</div></td>
@@ -80,25 +80,25 @@ Models available on Serverless Inference, as listed on the [available models pag
       <td><div align="center">160k</div></td>
     </tr>
     <tr>
-      <td rowspan="1"><div align="center"><img src="assets/icons/logo-google.png" alt="" width="28" height="28"><br>Google</div></td>
+      <td rowspan="1"><div align="center">Google</div></td>
       <td><code>google/gemma-4-31b-it</code></td>
       <td><div align="center">Instruct</div></td>
       <td><div align="center">262k</div></td>
     </tr>
     <tr>
-      <td rowspan="1"><div align="center"><img src="assets/icons/logo-meta.png" alt="" width="28" height="28"><br>Meta</div></td>
+      <td rowspan="1"><div align="center">Meta</div></td>
       <td><code>meta-llama/Llama-3.3-70B-Instruct</code></td>
       <td><div align="center">Instruct</div></td>
       <td><div align="center">128k</div></td>
     </tr>
     <tr>
-      <td rowspan="1"><div align="center"><img src="assets/icons/logo-moonshot.png" alt="" width="28" height="28"><br>Moonshot AI</div></td>
+      <td rowspan="1"><div align="center">Moonshot AI</div></td>
       <td><code>moonshotai/Kimi-K2.6</code></td>
       <td><div align="center">Instruct</div></td>
       <td><div align="center">256k</div></td>
     </tr>
     <tr>
-      <td rowspan="6"><div align="center"><img src="assets/icons/logo-nvidia.png" alt="" width="28" height="28"><br>NVIDIA</div></td>
+      <td rowspan="6"><div align="center">NVIDIA</div></td>
       <td><code>nvidia/Nemotron-3-Ultra-550B</code></td>
       <td><div align="center">Instruct</div></td>
       <td><div align="center">262k</div></td>
@@ -129,19 +129,19 @@ Models available on Serverless Inference, as listed on the [available models pag
       <td><div align="center">131k</div></td>
     </tr>
     <tr>
-      <td rowspan="1"><div align="center"><img src="assets/icons/logo-openai.png" alt="" width="28" height="28"><br>OpenAI</div></td>
+      <td rowspan="1"><div align="center">OpenAI</div></td>
       <td><code>openai/gpt-oss-120b</code></td>
       <td><div align="center">Instruct</div></td>
       <td><div align="center">128k</div></td>
     </tr>
     <tr>
-      <td rowspan="1"><div align="center"><img src="assets/icons/logo-qwen.png" alt="" width="28" height="28"><br>Qwen</div></td>
+      <td rowspan="1"><div align="center">Qwen</div></td>
       <td><code>qwen/Qwen3-235B-A22B-Instruct-2507</code></td>
       <td><div align="center">Instruct</div></td>
       <td><div align="center">131k</div></td>
     </tr>
     <tr>
-      <td rowspan="4"><div align="center"><img src="assets/icons/logo-zai.png" alt="" width="28" height="28"><br>Z.ai</div></td>
+      <td rowspan="4"><div align="center">Z.ai</div></td>
       <td><code>zai/GLM-5.3</code></td>
       <td><div align="center">Instruct</div></td>
       <td><div align="center">1M</div></td>
@@ -164,7 +164,6 @@ Models available on Serverless Inference, as listed on the [available models pag
   </tbody>
 </table>
 
-Provider marks belong to their respective owners.
 
 ### GPUs and CPUs
 
