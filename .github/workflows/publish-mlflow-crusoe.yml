@@ -1,0 +1,42 @@
+name: publish-mlflow-crusoe
+
+on:
+  push:
+    tags:
+      - "mlflow-crusoe-v*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build distributions
+        working-directory: integrations/mlflow
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mlflow-crusoe-dist
+          path: integrations/mlflow/dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: mlflow-crusoe-dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
