@@ -4,6 +4,8 @@ A hands-on introduction to GPU programming using [Triton](https://triton-lang.or
 
 You need to be comfortable with Python and PyTorch tensors. No CUDA experience is assumed. Every script is self-contained and checks its own result against PyTorch before it reports anything.
 
+Lesson 00 introduces the GPU in CUDA C++ terms with three short programs, and lesson 01 carries a CUDA C++ version of the Triton kernel under `01_vector_add/cuda/`. These are reference material for comparison; the track itself is written in Triton, and the C++ files are optional to build.
+
 ## Setup
 
 Requires [`uv`](https://docs.astral.sh/uv/) and an NVIDIA GPU with a working CUDA driver. The scripts select `cuda:0`. No Crusoe API key is required. If you use a cloud GPU, its compute and storage incur charges while they exist.
@@ -15,6 +17,17 @@ uv pip install -r requirements.txt --python .venv/bin/python
 ```
 
 The pinned versions in `requirements.txt` are the ones the reference numbers in Part 4 were produced with: PyTorch 2.6.0 and Triton 3.2.0.
+
+The CUDA C++ programs need the CUDA toolkit for `nvcc`; the driver alone is not enough. On Ubuntu 24.04 the toolkit installs from NVIDIA's package repository without touching the driver:
+
+```bash
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
+sudo dpkg -i cuda-keyring_1.1-1_all.deb
+sudo apt-get update && sudo apt-get install -y cuda-toolkit-12-8
+export PATH=/usr/local/cuda/bin:$PATH
+```
+
+Each `cuda/` directory has a `Makefile`; `make` builds its programs with `-arch=native` for the GPU in the machine.
 
 ## Running a script
 
@@ -182,9 +195,26 @@ For vector addition, `bytes_moved` is three arrays of four-byte floats; for SiLU
 
 ## Part 4: The lessons
 
+### 00. GPU basics
+
+This lesson has no Triton in it. It establishes the execution model in the terms CUDA uses, so that the Triton lessons can refer back to them.
+
+Three CUDA C++ programs under [`00_gpu_basics/cuda/`](./00_gpu_basics/cuda/), built with `make`:
+
+- [`01_hello_kernel.cu`](./00_gpu_basics/cuda/01_hello_kernel.cu) launches one block of eight threads that each print their `threadIdx.x`. It introduces `__global__`, the `<<<blocks, threads>>>` launch syntax, and `cudaDeviceSynchronize`.
+- [`02_square_array.cu`](./00_gpu_basics/cuda/02_square_array.cu) squares eight numbers with one thread each. It introduces the two memories and the five calls that move data between them: `cudaMalloc`, `cudaMemcpy` in both directions, the launch, and `cudaFree`.
+- The many-block vector addition that completes the sequence lives in [`01_vector_add/cuda/vector_add.cu`](./01_vector_add/cuda/vector_add.cu), so it sits beside the Triton kernel it mirrors.
+
+Four Python scripts show the same ideas from the PyTorch side:
+
+- [`profile_add_relu.py`](./00_gpu_basics/profile_add_relu.py) prints the `torch.profiler` table for `(a + b).relu()`, which shows two kernels.
+- [`count_kernels.py`](./00_gpu_basics/count_kernels.py) counts the kernels behind the same expression in eager mode and under `torch.compile`, where it becomes one Triton kernel.
+- [`async_timing.py`](./00_gpu_basics/async_timing.py) shows that wall-clock time around a launch measures the CPU, not the GPU.
+- [`know_thy_gpu.py`](./00_gpu_basics/know_thy_gpu.py) prints the SM count, warp size, warp slots per SM, memory sizes, and works through how many waves a one-million-element launch takes.
+
 ### 01. Vector addition
 
-[`v0_basic.py`](./01_vector_add/v0_basic.py) runs the kernel above at four sizes, including one that is not a multiple of the block size, and prints `OK` for each. [`v1_benchmark.py`](./01_vector_add/v1_benchmark.py) sweeps sizes from one thousand to sixteen million elements and reports GB/s against PyTorch's add. [`v2_kernel_inspection.py`](./01_vector_add/v2_kernel_inspection.py) dumps the compiler stages.
+[`v0_basic.py`](./01_vector_add/v0_basic.py) runs the kernel above at four sizes, including one that is not a multiple of the block size, and prints `OK` for each. [`v1_benchmark.py`](./01_vector_add/v1_benchmark.py) sweeps sizes from one thousand to sixteen million elements and reports GB/s against PyTorch's add. [`v2_kernel_inspection.py`](./01_vector_add/v2_kernel_inspection.py) dumps the compiler stages. [`cuda/vector_add.cu`](./01_vector_add/cuda/vector_add.cu) is the same kernel in CUDA C++, with a CPU correctness check and CUDA event timing, for comparison with the Triton version.
 
 Reference numbers from an NVIDIA L40S:
 
