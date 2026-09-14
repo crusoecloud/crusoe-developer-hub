@@ -2,3 +2,8 @@
 __pycache__/
 *.pyc
 **/results/
+
+# Compiled CUDA examples
+00_gpu_basics/cuda/01_hello_kernel
+00_gpu_basics/cuda/02_square_array
+01_vector_add/cuda/vector_add
