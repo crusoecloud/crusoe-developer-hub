@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 560" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#e8842a"/>
+    </marker>
+    <marker id="arrowg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#9aa4b2"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="980" height="560" fill="#f6f4f0"/>
+
+  <!-- title -->
+  <text x="40" y="46" font-size="24" font-weight="700" fill="#1b2431">512-GPU distributed SUT - ZMQ over RoCE</text>
+  <rect x="40" y="56" width="150" height="4" rx="2" fill="#e8842a"/>
+  <text x="40" y="82" font-size="14" fill="#6b7280">MLPerf Inference v6.1 · AMD MI355X · Crusoe Managed Kubernetes</text>
+
+  <!-- LoadGen -->
+  <rect x="40" y="150" width="120" height="70" rx="10" fill="#eef1f4" stroke="#64748b" stroke-width="1.5"/>
+  <text x="100" y="182" font-size="15" font-weight="600" fill="#1b2431" text-anchor="middle">LoadGen</text>
+  <text x="100" y="202" font-size="12" fill="#6b7280" text-anchor="middle">MLPerf harness</text>
+
+  <!-- Head -->
+  <rect x="250" y="128" width="230" height="114" rx="12" fill="#ffffff" stroke="#e8842a" stroke-width="2.5"/>
+  <text x="365" y="160" font-size="17" font-weight="700" fill="#1b2431" text-anchor="middle">Dedicated Head</text>
+  <text x="365" y="184" font-size="12.5" fill="#6b7280" text-anchor="middle">dispatch + LoadGen · no local model</text>
+  <text x="365" y="210" font-size="12.5" fill="#1b2431" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">:12345 dispatch</text>
+  <text x="365" y="228" font-size="12.5" fill="#1b2431" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">:12346 results</text>
+
+  <!-- LoadGen -> Head -->
+  <line x1="160" y1="185" x2="250" y2="185" stroke="#9aa4b2" stroke-width="2" marker-end="url(#arrowg)"/>
+
+  <!-- Workers -->
+  <g>
+    <!-- worker 0 -->
+    <rect x="620" y="112" width="320" height="60" rx="10" fill="#ffffff" stroke="#cbb89f" stroke-width="1.8"/>
+    <text x="640" y="138" font-size="14.5" font-weight="600" fill="#1b2431">Worker pod 0</text>
+    <text x="640" y="158" font-size="12.5" fill="#6b7280">8 MI355X GPUs / node</text>
+    <!-- worker 1 -->
+    <rect x="620" y="182" width="320" height="60" rx="10" fill="#ffffff" stroke="#cbb89f" stroke-width="1.8"/>
+    <text x="640" y="208" font-size="14.5" font-weight="600" fill="#1b2431">Worker pod 1</text>
+    <text x="640" y="228" font-size="12.5" fill="#6b7280">8 MI355X GPUs / node</text>
+    <!-- ellipsis -->
+    <text x="780" y="270" font-size="22" font-weight="700" fill="#9aa4b2" text-anchor="middle">⋮</text>
+    <!-- worker 63 -->
+    <rect x="620" y="284" width="320" height="60" rx="10" fill="#ffffff" stroke="#cbb89f" stroke-width="1.8"/>
+    <text x="640" y="310" font-size="14.5" font-weight="600" fill="#1b2431">Worker pod 63</text>
+    <text x="640" y="330" font-size="12.5" fill="#6b7280">8 MI355X GPUs / node</text>
+  </g>
+
+  <!-- Head -> Workers fan-out -->
+  <line x1="480" y1="175" x2="620" y2="142" stroke="#e8842a" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="480" y1="185" x2="620" y2="212" stroke="#e8842a" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="480" y1="200" x2="620" y2="314" stroke="#e8842a" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- per-node parallelism note -->
+  <text x="780" y="366" font-size="10.5" fill="#8a94a3" text-anchor="middle">gpt-oss: 8 × TP1 replicas · DeepSeek-R1: 1 × TP8+EP8 replica (sharded intra-node)</text>
+
+  <!-- stream label -->
+  <text x="548" y="120" font-size="11.5" fill="#e8842a" text-anchor="middle" font-weight="600">token streams</text>
+  <text x="548" y="392" font-size="12" fill="#6b7280" text-anchor="middle">tokenized prompts → / ← generated tokens, ZMQ over 400G RoCE</text>
+
+  <!-- footer band -->
+  <rect x="40" y="452" width="900" height="70" rx="12" fill="#1b2431"/>
+  <text x="490" y="482" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">1 dedicated head + 64 worker nodes = 512 MI355X GPUs</text>
+  <text x="490" y="505" font-size="12.5" fill="#c9b79f" text-anchor="middle">No cross-node NVLink / InfiniBand collective - inference crosses nodes only as token streams over Ethernet</text>
+</svg>

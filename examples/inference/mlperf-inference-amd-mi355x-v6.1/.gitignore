@@ -1,0 +1,10 @@
+# run outputs / large artifacts (never commit)
+results/
+*.log
+*.pkl
+*.safetensors
+*.mp4
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp

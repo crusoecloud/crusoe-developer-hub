@@ -1,0 +1,59 @@
+# 64-node MN TEST06 compliance HEAD (rendered from 106 + 13's audit.config mechanism; dedicated head).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${RUN}-head
+  namespace: mlperf
+  labels: { app: mlperf-ds-mn-offline, role: head, benchmark: deepseek-r1, run: ${RUN} }
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 25200
+  ttlSecondsAfterFinished: 21600
+  template:
+    metadata: { labels: { app: mlperf-ds-mn-offline, role: head, benchmark: deepseek-r1, run: ${RUN} } }
+    spec:
+      restartPolicy: Never
+      hostNetwork: true
+      hostIPC: true
+      imagePullSecrets: [{ name: regcred }]
+      nodeName: ${HEAD_NODE}
+      containers:
+        - name: head
+          image: <your-registry>/<your-project>/deepseek_sglang_v0.5.15
+          securityContext: { privileged: true }
+          command: ["/bin/bash","-lc"]
+          args:
+            - |
+              set -x
+              ulimit -Sn 524288 2>/dev/null || ulimit -Sn 262144 2>/dev/null || true
+              export HARNESS_RECV_IDLE_TIMEOUT_S=${HARNESS_RECV_IDLE_TIMEOUT_S:-900} HARNESS_RECV_TAIL=${HARNESS_RECV_TAIL:-3}
+              HEAD_IP=${HEAD_IP}; OUT=${OUT}
+              mkdir -p /model /data/deepseek-r1 "$OUT/TEST06"
+              rm -f "$OUT/TEST06"/mlperf_log_*.txt "$OUT/TEST06"/mlperf_log_*.json "$OUT/head-sut.log" "$OUT"/worker-*.log 2>/dev/null || true
+              ln -sfn /shared/models/deepseek-r1/S3_sq_a05_v2 /model/S3_sq_a05_v2
+              ln -sfn /shared/datasets/deepseek-r1/mlperf_deepseek_r1_dataset_4388_fp8_eval.pkl \
+                      /data/deepseek-r1/mlperf_deepseek_r1_dataset_4388_fp8_eval.pkl
+              mkdir -p /shared/ds-cache/hf; rm -rf /root/.cache && ln -sfn /shared/ds-cache /root/.cache
+              if [ -f /shared/patches-ds/harden-offline-sut.py ]; then python3 /shared/patches-ds/harden-offline-sut.py; fi
+              cd /lab-mlperf-inference/code
+              echo "DEDICATED head: no co-located worker (all 512 GPUs are remote workers)"
+              # TEST06 audit.config in the harness cwd (compliance re-runs perf with it)
+              TEST_DIR=/lab-mlperf-inference/mlperf_inference/compliance/TEST06
+              cp "$TEST_DIR/audit.config" ./ && echo "audit.config staged: $(md5sum audit.config)"
+              # (2) SUT client - TEST06 audit perf run at 64 nodes
+              bash run_harness.sh --config-path deepseek-r1/ --config-name offline_mi355x_mn --backend zmq \
+                test_mode=performance port=12345 harness_config.device_count=${DEVICE_COUNT} \
+                harness_config.target_qps=${TARGET_QPS} \
+                harness_config.user_conf_path=/lab-mlperf-inference/code/deepseek-r1/user_mi355x_mn.conf \
+                harness_config.output_log_dir="$OUT/TEST06" 2>&1 | tee "$OUT/head-sut.log" | tail -40
+              echo "===== TEST06 audit run done - verifying ====="
+              python3 "$TEST_DIR/run_verification.py" -c "$OUT/TEST06" -o "$OUT" -s Offline 2>&1 | tee "$OUT/verification.log" | tail -25
+              rm -f audit.config
+              echo "===== TEST06 RESULT ====="
+              grep -iE "TEST06|PASS|FAIL|Compliance|First token|EOS" "$OUT/verification.log" 2>/dev/null | tail
+              true
+          resources: { requests: { amd.com/gpu: 8, cpu: "180", memory: 1800Gi }, limits: { amd.com/gpu: 8 } }
+          volumeMounts: [{ name: shared, mountPath: /shared }, { name: dshm, mountPath: /dev/shm }]
+      volumes:
+        - { name: shared, persistentVolumeClaim: { claimName: mlperf-shared } }
+        - { name: dshm, emptyDir: { medium: Memory, sizeLimit: 512Gi } }

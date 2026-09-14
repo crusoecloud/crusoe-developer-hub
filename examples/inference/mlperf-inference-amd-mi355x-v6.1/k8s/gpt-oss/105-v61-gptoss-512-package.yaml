@@ -1,0 +1,81 @@
+# gpt-oss-120b v6.1 - assemble the 512-GPU (64-node) submission tree + run submission_checker.
+# Clones the shared setup/src/documentation from the passing single-node package, drops in the
+# 512-GPU results (perf + accuracy + TEST07 + TEST09) staged under /shared/results/gptoss-64-final,
+# adds the 512-system.json, truncates accuracy logs, and runs the official checker. CPU-only.
+#
+# AMD v6.1 layout: compliance (TEST07/TEST09) + accuracy + measurements.json all nest UNDER
+# results/<SYS>/gpt-oss-120b/<scenario>/. Server accuracy reuses the Offline accuracy log
+# (AccuracyOnly is scenario-independent). Prereq: gptoss-64-final/{Offline,Server}/performance,
+# Offline/accuracy, compliance/{TEST07,TEST09}, and 512xMI355X_2xEPYC-9575F.json all staged.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: v61-gptoss-512-package
+  namespace: mlperf
+  labels: { app: mlperf-v61, benchmark: gpt-oss-120b, step: package512 }
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 21600
+  template:
+    metadata: { labels: { app: mlperf-v61, benchmark: gpt-oss-120b, step: package512 } }
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: package
+          image: rocm/amd-mlperf:mi355x_llama2_70b_inference_6.0   # any python3; no GPU
+          env:
+            - { name: SUBMITTER, value: "Crusoe" }
+            - { name: SYS, value: "512xMI355X_2xEPYC-9575F" }
+            - { name: SRCSYS, value: "8xMI355X_2xEPYC-9575F" }
+          command: ["/bin/bash","-lc"]
+          args:
+            - |
+              set -e
+              SRC=/shared/results/v61-gptoss/package/inference_results_6.1/closed/Crusoe
+              ROOT=/shared/results/v61-gptoss-512/package/inference_results_6.1
+              DST=$ROOT/closed/Crusoe
+              FINAL=/shared/results/gptoss-64-final
+              echo "===== (1) clone shared trees from the passing single-node package ====="
+              rm -rf "$ROOT"; mkdir -p "$DST/systems" "$DST/results/$SYS/gpt-oss-120b"
+              cp -r "$SRC/setup" "$SRC/src" "$DST/" 2>/dev/null || true
+              [ -d "$SRC/documentation" ] && cp -r "$SRC/documentation" "$DST/" || true
+              cp "$FINAL/$SYS.json" "$DST/systems/$SYS.json"
+              echo "===== (2) assemble per-scenario results (perf + accuracy + TEST07 + TEST09) ====="
+              for SCEN in Offline Server; do
+                D="$DST/results/$SYS/gpt-oss-120b/$SCEN"
+                SD="$SRC/results/$SRCSYS/gpt-oss-120b/$SCEN"
+                mkdir -p "$D/performance/run_1" "$D/accuracy"
+                cp "$FINAL/$SCEN/performance/run_1/"mlperf_log_summary.txt "$D/performance/run_1/"
+                cp "$FINAL/$SCEN/performance/run_1/"mlperf_log_detail.txt  "$D/performance/run_1/"
+                # accuracy: both scenarios use the Offline AccuracyOnly result (scenario-independent).
+                # Copy ALL four files (accuracy.txt + mlperf_log_accuracy.json + detail + summary) -
+                # the checker reads effective_scenario from the accuracy mlperf_log_detail.txt.
+                cp "$FINAL/Offline/accuracy/"* "$D/accuracy/"
+                # compliance nested under the scenario
+                cp -r "$FINAL/compliance/TEST07" "$D/TEST07"
+                cp -r "$FINAL/compliance/TEST09" "$D/TEST09"
+                # measurements + confs + README reused from the single-node scenario
+                for f in measurements.json user.conf mlperf.conf README.md; do
+                  [ -f "$SD/$f" ] && cp "$SD/$f" "$D/$f" || echo "NOTE: single-node $SCEN/$f missing"
+                done
+              done
+              echo "===== (3) tree ====="; find "$DST/results" -maxdepth 5 -type d | sort
+              echo "===== (4) truncate accuracy logs (required) ====="
+              INF=/shared/mlcommons-inference
+              [ -d "$INF/tools/submission" ] || git clone --depth 1 https://github.com/mlcommons/inference.git "$INF"
+              pip install -q --break-system-packages numpy pandas 2>/dev/null || true
+              BK=/shared/results/v61-gptoss-512/acc-backup; rm -rf "$BK"
+              python3 "$INF/tools/submission/truncate_accuracy_log.py" \
+                --input "$ROOT" --submitter "$SUBMITTER" --backup "$BK" 2>&1 | tail -6 || true
+              echo "===== (5) SUBMISSION CHECKER v6.1 ====="
+              cd "$INF"
+              python3 -m tools.submission.submission_checker.main \
+                --input "$ROOT" --version v6.1 --submitter "$SUBMITTER" \
+                --csv "$ROOT/summary-Crusoe-512-v6.1.csv" 2>&1 \
+                | tee /shared/results/v61-gptoss-512/checker-512-v6.1.log \
+                | grep -iE 'Results=|looks OK|VALID|INVALID|ERROR|WARNING|required scenario|compliance|missing' | tail -40
+              echo "CHECKER_EXIT=${PIPESTATUS[0]}"
+          resources: { requests: { cpu: "4", memory: 16Gi } }
+          volumeMounts: [{ name: shared, mountPath: /shared }]
+      volumes:
+        - { name: shared, persistentVolumeClaim: { claimName: mlperf-shared } }

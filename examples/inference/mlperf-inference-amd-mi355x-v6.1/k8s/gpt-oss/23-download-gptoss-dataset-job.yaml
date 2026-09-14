@@ -1,0 +1,31 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mlperf-download-gptoss-dataset
+  namespace: mlperf
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600   # auto-delete 1h after finish (prevents name-collision on re-apply)
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: dl
+          image: rocm/amd-mlperf:mi355x_gptoss_120b_inference_6.0
+          command: ["/bin/bash","-lc"]
+          args:
+            - |
+              set -x
+              pip install -q mlc-scripts || pip install -q mlcflow mlc-scripts
+              which mlcr || { echo NO_MLCR; exit 1; }
+              mkdir -p /shared/datasets/gpt-oss-120b
+              mlcr get-dataset-mlperf-inference-gpt-oss,_mlc,_r2-downloader \
+                --outdirname=/shared/datasets/gpt-oss-120b/raw -j 2>&1 | tail -20 || echo "GPTOSS_DS_FAILED rc=$?"
+              find /shared/datasets/gpt-oss-120b -name '*.parquet' -exec ls -lh {} \; 2>/dev/null
+          resources:
+            requests: { cpu: "8", memory: 32Gi }
+          volumeMounts:
+            - { name: shared, mountPath: /shared }
+      volumes:
+        - name: shared
+          persistentVolumeClaim: { claimName: mlperf-shared }

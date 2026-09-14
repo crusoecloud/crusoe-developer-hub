@@ -1,0 +1,79 @@
+# Multi-node ZMQ distributed SUT (AMD multi-node technique) - gpt-oss-120b v6.1 HEAD.
+# TEMPLATE: rendered by launch-mn.sh via `envsubst`. Do not apply directly - run
+# `bash launch-mn.sh <N>` which fills ${RUN} ${HEAD_NODE} ${HEAD_IP} ${DEVICE_COUNT}
+# ${TARGET_QPS} ${OUT} and applies this + 101-mn-gptoss-workers.yaml.
+#
+# HEAD pod: runs the SUT client (run_harness.sh --backend zmq, binds tcp://*:12345 dispatch
+# + tcp://*:12346 results) AND a local worker for this node's 8 GPUs. Worker pods on other
+# nodes connect to ${HEAD_IP}:12345. hostNetwork:true (= docker --network=host) exposes the
+# ports at the node InternalIP. device_count = 8 * N (head local worker + N-1 worker pods).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${RUN}-head
+  namespace: mlperf
+  labels: { app: mlperf-mn-gptoss, role: head, benchmark: gpt-oss-120b, run: ${RUN} }
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 7200
+  template:
+    metadata: { labels: { app: mlperf-mn-gptoss, role: head, benchmark: gpt-oss-120b, run: ${RUN} } }
+    spec:
+      restartPolicy: Never
+      hostNetwork: true
+      hostIPC: true
+      imagePullSecrets: [{ name: regcred }]
+      nodeName: ${HEAD_NODE}
+      containers:
+        - name: head
+          image: <your-registry>/<your-project>/gptoss_vllm_v0.22.0
+          securityContext: { privileged: true }
+          command: ["/bin/bash","-lc"]
+          args:
+            - |
+              set -x
+              # 512-way fan-in opens ~2 sockets/worker on the head; the default 1024-fd soft
+              # limit caps registration at ~458. Raise it (hard limit is 524288).
+              ulimit -Sn 524288 2>/dev/null || ulimit -Sn 262144 2>/dev/null || ulimit -Sn 65536 || true
+              echo "fd limit now: $(ulimit -Sn)"
+              HEAD_IP=${HEAD_IP}
+              OUT=${OUT}
+              mkdir -p /model /data "$OUT/head"
+              # clear stale results from a prior run of this same RUN label, so a monitor
+              # reading $OUT can't pick up an old mlperf_log_summary.txt and misreport.
+              rm -f "$OUT/head"/mlperf_log_*.txt "$OUT/head"/mlperf_log_*.json "$OUT/head-sut.log" "$OUT"/worker-*.log 2>/dev/null || true
+              ln -sfn /shared/models/gpt-oss-120b-b5c939d /model/gpt-oss-120b       # native mxfp4 (correct v6.1 model)
+              ln -sfn /shared/datasets/gpt-oss-120b/raw/gpt-oss-dataset /data/gptoss-dataset
+              ln -sfn /shared/v61-cache/gptoss-mxfp4 /root/.cache 2>/dev/null || true
+              # harden the head's ZMQ registration barrier for large fleets (>=64 nodes):
+              # ROUTER_HANDOVER on both ROUTERs + dedup/poll-timeout register_servers, so a
+              # re-warmed worker's duplicate identity can't stall registration. See k8s/patches/.
+              if [ -f /shared/patches/harden-registration.py ]; then python3 /shared/patches/harden-registration.py; else echo "WARN: registration patch not staged on PVC"; fi
+              cd /lab-mlperf-inference/code
+              # (1) local worker for this node's 8 GPUs - connects back to the head (self).
+              #     DEDICATED_HEAD=1 (__LOCAL_WORKER__=0): skip it - this node is a pure SUT and
+              #     all ${DEVICE_COUNT} GPUs come from remote worker nodes (mirrors k8s-ds pattern).
+              #     Server local worker keeps its own --config-name server_mi355x regardless of ${CONFIG_NAME}.
+              if [ "__LOCAL_WORKER__" = "1" ]; then
+                python3 harness_llm/backends/vllm/zmq/distributed_async_server.py \
+                  --config-path gpt-oss-120b/ --config-name server_mi355x \
+                  node_id=$(hostname) headnode_address=${HEAD_IP}:12345 \
+                  harness_config.dataset_path=/data/gptoss-dataset/perf/perf_eval_ref.parquet \
+                  > "$OUT/worker-head.log" 2>&1 &
+                sleep 5
+              else
+                echo "DEDICATED head: no co-located worker (all ${DEVICE_COUNT} GPUs are remote workers)"
+              fi
+              # (2) SUT client - binds :12345/:12346, waits for ${DEVICE_COUNT} GPUs of workers, runs LoadGen
+              bash run_harness.sh --config-path gpt-oss-120b/ --config-name ${CONFIG_NAME} --backend zmq \
+                test_mode=performance port=12345 harness_config.device_count=${DEVICE_COUNT} \
+                harness_config.target_qps=${TARGET_QPS} \
+                harness_config.dataset_path=/data/gptoss-dataset/perf/perf_eval_ref.parquet \
+                harness_config.output_log_dir="$OUT/head" 2>&1 | tee "$OUT/head-sut.log" | tail -40
+              echo "===== ${RUN} RESULT (device_count=${DEVICE_COUNT}, qps=${TARGET_QPS}) ====="
+              grep -iE 'Result is|Completed tokens per second|Scheduled samples' "$OUT/head/mlperf_log_summary.txt" 2>/dev/null
+          resources: { requests: { amd.com/gpu: 8, cpu: "180", memory: 1800Gi }, limits: { amd.com/gpu: 8 } }
+          volumeMounts: [{ name: shared, mountPath: /shared }, { name: dshm, mountPath: /dev/shm }]
+      volumes:
+        - { name: shared, persistentVolumeClaim: { claimName: mlperf-shared } }
+        - { name: dshm, emptyDir: { medium: Memory, sizeLimit: 512Gi } }

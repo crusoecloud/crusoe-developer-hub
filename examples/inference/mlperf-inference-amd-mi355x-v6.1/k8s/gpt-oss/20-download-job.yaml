@@ -1,0 +1,49 @@
+# Downloads the gpt-oss-120b v6.1 checkpoint (native MXFP4) to the shared PVC, at the exact path
+# the 512-GPU manifests expect: /shared/models/gpt-oss-120b-b5c939d
+#
+# Model: openai/gpt-oss-120b @ revision b5c939d (the native-MXFP4 weights used for MLPerf v6.1 -
+# NOT the older v6.0 Quark repack). Requires a Hugging Face token (secret `hf-token`, key `token`)
+# that has accepted the model's license.
+#
+# Uses a lightweight public python image + huggingface_hub (with hf_transfer for speed) so the
+# download step does not depend on any GPU/ROCm image.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mlperf-download-gptoss-model
+  namespace: mlperf
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 3600   # auto-delete 1h after finish (avoids name collision on re-apply)
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: download
+          image: python:3.11-slim
+          command: ["/bin/bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              pip install --no-cache-dir -U "huggingface_hub[cli,hf_transfer]"
+              DEST=/shared/models/gpt-oss-120b-b5c939d
+              mkdir -p "$DEST"
+              echo "=== downloading openai/gpt-oss-120b @ b5c939d -> $DEST ==="
+              hf download openai/gpt-oss-120b --revision b5c939d --local-dir "$DEST"
+              echo "=== done ==="
+              du -sh "$DEST"
+          env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef: { name: hf-token, key: token }
+            - name: HF_HOME
+              value: /shared/hf-cache
+            - name: HF_HUB_ENABLE_HF_TRANSFER
+              value: "1"
+          resources:
+            requests: { cpu: "8", memory: 32Gi }
+          volumeMounts:
+            - { name: shared, mountPath: /shared }
+      volumes:
+        - name: shared
+          persistentVolumeClaim: { claimName: mlperf-shared }

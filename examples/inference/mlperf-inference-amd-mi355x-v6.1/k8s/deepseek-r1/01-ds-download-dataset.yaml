@@ -1,0 +1,37 @@
+# DeepSeek-R1 v6.1 - download the (public) MLPerf eval dataset to the PVC.
+# No HF token needed (MLCommons R2 storage). NOTE: AMD's README metadata URL ends `.urih`
+# (typo) - the working extension is `.uri`; this job tries `.uri` first, `.urih` as fallback.
+# Produces mlperf_deepseek_r1_dataset_4388_fp8_eval.pkl (+ calibration pkl) - ~155 MB total.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ds-download-dataset
+  namespace: mlperf
+  labels: { app: mlperf-deepseek, role: download }
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata: { labels: { app: mlperf-deepseek, role: download } }
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: dl
+          image: rocm/amd-mlperf:mi355x_llama2_70b_inference_6.0
+          command: ["/bin/bash","-lc"]
+          args:
+            - |
+              set -x
+              DEST=/shared/datasets/deepseek-r1
+              mkdir -p "$DEST"
+              for ext in uri urih; do
+                echo "=== try metadata .$ext ==="
+                bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) \
+                  -d "$DEST" "https://inference.mlcommons-storage.org/metadata/deepseek-r1-datasets-fp8-eval.$ext" 2>&1 | tail -30 && break
+              done
+              echo "=== result files ==="
+              find "$DEST" -type f -name '*.pkl' -exec ls -la {} \;
+          volumeMounts: [{ name: shared, mountPath: /shared }]
+          resources: { requests: { cpu: "4", memory: 16Gi } }
+      volumes:
+        - { name: shared, persistentVolumeClaim: { claimName: mlperf-shared } }

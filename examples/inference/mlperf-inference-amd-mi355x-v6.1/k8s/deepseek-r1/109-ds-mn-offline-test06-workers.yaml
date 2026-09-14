@@ -1,0 +1,47 @@
+# 64-node MN TEST06 WORKERS (64 remote workers, dedicated head) - rendered from 107.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${RUN}-workers
+  namespace: mlperf
+  labels: { app: mlperf-ds-mn-offline, role: worker, benchmark: deepseek-r1, run: ${RUN} }
+spec:
+  completionMode: Indexed
+  completions: ${WORKERS}
+  parallelism: ${WORKERS}
+  backoffLimit: 64
+  activeDeadlineSeconds: 25200
+  ttlSecondsAfterFinished: 21600
+  template:
+    metadata: { labels: { app: mlperf-ds-mn-offline, role: worker, benchmark: deepseek-r1, run: ${RUN} } }
+    spec:
+      restartPolicy: Never
+      hostNetwork: true
+      hostIPC: true
+      imagePullSecrets: [{ name: regcred }]
+      containers:
+        - name: worker
+          image: <your-registry>/<your-project>/deepseek_sglang_v0.5.15
+          securityContext: { privileged: true }
+          command: ["/bin/bash","-lc"]
+          args:
+            - |
+              set -x
+              ulimit -Sn 524288 2>/dev/null || ulimit -Sn 262144 2>/dev/null || true
+              HEAD_IP=${HEAD_IP}; OUT=${OUT}
+              mkdir -p /model /data/deepseek-r1 "$OUT"
+              ln -sfn /shared/models/deepseek-r1/S3_sq_a05_v2 /model/S3_sq_a05_v2
+              mkdir -p /shared/ds-cache/hf; ln -sfn /shared/ds-cache /root/.cache 2>/dev/null || true
+              if [ -f /shared/patches-ds/harden-worker-offline.py ]; then python3 /shared/patches-ds/harden-worker-offline.py; fi
+              cd /lab-mlperf-inference/code
+              sleep $(( ${JOB_COMPLETION_INDEX:-0} * 3 ))
+              echo "DS TEST06 WORKER $(hostname) [idx=${JOB_COMPLETION_INDEX:-?}] -> head ${HEAD_IP}:12345/12346"
+              python3 harness_llm/backends/vllm/zmq/distributed_sync_offline.py \
+                --config-path deepseek-r1/ --config-name offline_mi355x_mn --backend zmq \
+                node_id=$(hostname) headnode_address=${HEAD_IP}:12345 \
+                2>&1 | tee "$OUT/worker-$(hostname).log" | tail -20
+          resources: { requests: { amd.com/gpu: 8, cpu: "180", memory: 1800Gi }, limits: { amd.com/gpu: 8 } }
+          volumeMounts: [{ name: shared, mountPath: /shared }, { name: dshm, mountPath: /dev/shm }]
+      volumes:
+        - { name: shared, persistentVolumeClaim: { claimName: mlperf-shared } }
+        - { name: dshm, emptyDir: { medium: Memory, sizeLimit: 512Gi } }

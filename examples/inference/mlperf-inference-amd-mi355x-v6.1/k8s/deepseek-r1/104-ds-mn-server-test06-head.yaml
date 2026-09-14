@@ -1,0 +1,66 @@
+# DeepSeek-R1 v6.1 multi-node ZMQ - SERVER TEST06 compliance HEAD (template).
+# Rendered by launch-mn-deepseek.sh (SCENARIO=server WARMUP=1 TEST06=1). Same warmup-enabled
+# server config as the perf head (102), plus the TEST06 audit.config in the harness cwd and a
+# run_verification.py -s Server pass afterward. Dedicated head; reuses 103 warmup workers.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${RUN}-head
+  namespace: mlperf
+  labels: { app: mlperf-ds-mn-server, role: head, benchmark: deepseek-r1, run: ${RUN} }
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 25200
+  ttlSecondsAfterFinished: 21600
+  template:
+    metadata: { labels: { app: mlperf-ds-mn-server, role: head, benchmark: deepseek-r1, run: ${RUN} } }
+    spec:
+      restartPolicy: Never
+      hostNetwork: true
+      hostIPC: true
+      imagePullSecrets: [{ name: regcred }]
+      nodeName: ${HEAD_NODE}
+      containers:
+        - name: head
+          image: <your-registry>/<your-project>/deepseek_sglang_v0.5.15
+          securityContext: { privileged: true }
+          command: ["/bin/bash","-lc"]
+          args:
+            - |
+              set -x
+              ulimit -Sn 524288 2>/dev/null || true
+              HEAD_IP=${HEAD_IP}; OUT=${OUT}
+              mkdir -p /model /data/deepseek-r1 "$OUT/TEST06"
+              rm -f "$OUT/TEST06"/mlperf_log_*.txt "$OUT/TEST06"/mlperf_log_*.json "$OUT/head-sut.log" "$OUT"/worker-*.log 2>/dev/null || true
+              ln -sfn /shared/models/deepseek-r1/S3_sq_a05_v2 /model/S3_sq_a05_v2
+              ln -sfn /shared/datasets/deepseek-r1/mlperf_deepseek_r1_dataset_4388_fp8_eval.pkl \
+                      /data/deepseek-r1/mlperf_deepseek_r1_dataset_4388_fp8_eval.pkl
+              mkdir -p /shared/ds-cache/hf; rm -rf /root/.cache && ln -sfn /shared/ds-cache /root/.cache
+              if [ -f /shared/patches-ds/harden-registration.py ]; then python3 /shared/patches-ds/harden-registration.py; else echo "NOTE: ds server head patch not staged"; fi
+              cd /lab-mlperf-inference/code
+              # --- WARMUP enablement (same as 102) ---
+              [ -f /shared/patches-ds/enable-deepseek-warmup.py ] && python3 /shared/patches-ds/enable-deepseek-warmup.py || echo "WARN: warmup patch missing"
+              [ -f /shared/patches-ds/server_mn_warmup.yaml ] && cp /shared/patches-ds/server_mn_warmup.yaml deepseek-r1/server_mi355x_mn.yaml && echo "overlaid warmup server config"
+              sed -i 's|model_path: /model/S3_sq_a05_v2/|model_path: /model/S3_sq_a05_v2|' deepseek-r1/server_mi355x_mn.yaml
+              [ -f /shared/patches-ds/user_mi355x_mn_warmup.conf ] && cp /shared/patches-ds/user_mi355x_mn_warmup.conf deepseek-r1/user_mi355x_mn.conf && echo "overlaid warmup user.conf"
+              echo "warmup check -> config: $(grep -m1 enable_warmup deepseek-r1/server_mi355x_mn.yaml) | constants: $(grep -c "'deepseek-r1'" harness_llm/backends/common/constants.py)"
+              echo "DEDICATED head: no co-located worker (all ${DEVICE_COUNT} GPUs are remote workers)"
+              # --- TEST06 audit.config into harness cwd (compliance re-runs the perf workload with it) ---
+              TEST_DIR=/lab-mlperf-inference/mlperf_inference/compliance/TEST06
+              cp "$TEST_DIR/audit.config" ./ && echo "audit.config staged: $(md5sum audit.config)"
+              bash run_harness.sh --config-path deepseek-r1/ --config-name server_mi355x_mn --backend zmq \
+                test_mode=performance port=12345 harness_config.device_count=${DEVICE_COUNT} \
+                harness_config.target_qps=${TARGET_QPS} \
+                harness_config.user_conf_path=/lab-mlperf-inference/code/deepseek-r1/user_mi355x_mn.conf \
+                harness_config.output_log_dir="$OUT/TEST06" 2>&1 | tee "$OUT/head-sut.log" | tail -40
+              rm -f audit.config
+              echo "===== TEST06 audit run done - verifying (-s Server) ====="
+              python3 "$TEST_DIR/run_verification.py" -c "$OUT/TEST06" -o "$OUT" -s Server 2>&1 | tee "$OUT/verification.log" | tail -25
+              echo "===== ${RUN} TEST06 RESULT ====="
+              grep -iE "TEST06|PASS|FAIL|Compliance|First token|EOS|Sample length" "$OUT/verification.log" 2>/dev/null | tail
+              true
+          resources: { requests: { amd.com/gpu: 8, cpu: "180", memory: 1800Gi }, limits: { amd.com/gpu: 8 } }
+          volumeMounts: [{ name: shared, mountPath: /shared }, { name: dshm, mountPath: /dev/shm }]
+      volumes:
+        - { name: shared, persistentVolumeClaim: { claimName: mlperf-shared } }
+        - { name: dshm, emptyDir: { medium: Memory, sizeLimit: 512Gi } }

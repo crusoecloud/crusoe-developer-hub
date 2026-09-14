@@ -1,0 +1,64 @@
+# Multi-node ZMQ distributed SUT - gpt-oss-120b v6.1 WORKERS (all of them, one Job).
+# TEMPLATE: rendered by launch-mn.sh via `envsubst` (fills ${RUN} ${HEAD_IP} ${WORKERS} ${OUT}).
+#
+# This ONE Job replaces the old per-node worker manifest. Each pod requests all 8 GPUs on a
+# node, so with parallelism/completions = ${WORKERS} (= N-1) Kubernetes spreads exactly one
+# worker per free node automatically - a node whose 8 GPUs are taken can't host a second, so
+# no nodeName / anti-affinity is needed. Each worker runs distributed_async_server.py: a
+# zmq.DEALER that CONNECTS to ${HEAD_IP}:12345 (auto-retries until the head binds) and serves
+# queries on this node's 8 GPUs. node_id=$(hostname) is unique per node under hostNetwork.
+# activeDeadlineSeconds is a backstop so orphaned servers can't linger; launch-mn.sh also
+# tears this Job down once the head Job completes.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${RUN}-workers
+  namespace: mlperf
+  labels: { app: mlperf-mn-gptoss, role: worker, benchmark: gpt-oss-120b, run: ${RUN} }
+spec:
+  completionMode: Indexed
+  completions: ${WORKERS}
+  parallelism: ${WORKERS}
+  backoffLimit: ${WORKERS}
+  activeDeadlineSeconds: 5400
+  ttlSecondsAfterFinished: 7200
+  template:
+    metadata: { labels: { app: mlperf-mn-gptoss, role: worker, benchmark: gpt-oss-120b, run: ${RUN} } }
+    spec:
+      restartPolicy: Never
+      hostNetwork: true
+      hostIPC: true
+      imagePullSecrets: [{ name: regcred }]
+      containers:
+        - name: worker
+          image: <your-registry>/<your-project>/gptoss_vllm_v0.22.0
+          securityContext: { privileged: true }
+          command: ["/bin/bash","-lc"]
+          args:
+            - |
+              set -x
+              ulimit -Sn 524288 2>/dev/null || ulimit -Sn 262144 2>/dev/null || ulimit -Sn 65536 || true
+              HEAD_IP=${HEAD_IP}
+              OUT=${OUT}
+              mkdir -p /model /data "$OUT"
+              ln -sfn /shared/models/gpt-oss-120b-b5c939d /model/gpt-oss-120b
+              ln -sfn /shared/datasets/gpt-oss-120b/raw/gpt-oss-dataset /data/gptoss-dataset
+              ln -sfn /shared/v61-cache/gptoss-mxfp4 /root/.cache 2>/dev/null || true
+              # large-fleet fix: re-send REGISTER until the head acks (a lost REGISTER at
+              # 512-way fan-in otherwise hangs both sides). See k8s/patches/.
+              if [ -f /shared/patches/harden-worker-register.py ]; then python3 /shared/patches/harden-worker-register.py; else echo "WARN: worker register patch not staged"; fi
+              cd /lab-mlperf-inference/code
+              # mild stagger by job index to spread model-load + warmup-JIT across the fleet
+              # (reduces the straggler tail seen at 512-GPU scale). ~2s * index.
+              sleep $(( ${JOB_COMPLETION_INDEX:-0} * 2 ))
+              echo "WORKER $(hostname) [idx=${JOB_COMPLETION_INDEX:-?}] -> head ${HEAD_IP}:12345"
+              python3 harness_llm/backends/vllm/zmq/distributed_async_server.py \
+                --config-path gpt-oss-120b/ --config-name server_mi355x \
+                node_id=$(hostname) headnode_address=${HEAD_IP}:12345 \
+                harness_config.dataset_path=/data/gptoss-dataset/perf/perf_eval_ref.parquet \
+                2>&1 | tee "$OUT/worker-$(hostname).log" | tail -20
+          resources: { requests: { amd.com/gpu: 8, cpu: "180", memory: 1800Gi }, limits: { amd.com/gpu: 8 } }
+          volumeMounts: [{ name: shared, mountPath: /shared }, { name: dshm, mountPath: /dev/shm }]
+      volumes:
+        - { name: shared, persistentVolumeClaim: { claimName: mlperf-shared } }
+        - { name: dshm, emptyDir: { medium: Memory, sizeLimit: 512Gi } }
