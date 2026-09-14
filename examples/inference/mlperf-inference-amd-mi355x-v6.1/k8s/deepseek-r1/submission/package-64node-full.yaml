@@ -1,0 +1,73 @@
+# DeepSeek-R1 v6.1 - complete the 512-GPU (64-node) submission: add the Server scenario
+# (perf VALID + accuracy-reuse + TEST06) to the already-built Offline tree, then run the official
+# submission_checker. Server accuracy reuses the Offline AccuracyOnly log (scenario-independent).
+# CPU-only. Prereq: ds-64-final/Server/performance staged + ds-mn-server-test06-wu-n64 TEST06 done.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: v61-deepseek-full-package
+  namespace: mlperf
+  labels: { app: mlperf-v61, benchmark: deepseek-r1, step: package-full }
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 21600
+  template:
+    metadata: { labels: { app: mlperf-v61, benchmark: deepseek-r1, step: package-full } }
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: package
+          image: rocm/amd-mlperf:mi355x_llama2_70b_inference_6.0   # any python3; no GPU
+          env:
+            - { name: SUBMITTER, value: "Crusoe" }
+            - { name: SYS, value: "512xMI355X_2xEPYC-9575F" }
+          command: ["/bin/bash","-lc"]
+          args:
+            - |
+              set -e
+              SRC=/shared/results/v61-deepseek/inference_results_6.1
+              ROOT=/shared/results/v61-deepseek-full/inference_results_6.1
+              DST=$ROOT/closed/Crusoe
+              MODELDIR="$DST/results/$SYS/deepseek-r1"
+              OFF="$MODELDIR/Offline"; SRV="$MODELDIR/Server"
+              FINAL=/shared/results/ds-64-final
+              T06=/shared/results/ds-mn-server-test06-wu-n64
+              echo "===== (1) clone the existing Offline-complete tree ====="
+              rm -rf "$ROOT"; mkdir -p "$(dirname "$ROOT")"; cp -r "$SRC" "$(dirname "$ROOT")/"
+              echo "===== (2) build Server scenario alongside Offline ====="
+              mkdir -p "$SRV/performance/run_1" "$SRV/accuracy" "$SRV/TEST06"
+              # perf (the VALID warmup server run)
+              cp "$FINAL/Server/performance/run_1/"mlperf_log_summary.txt "$SRV/performance/run_1/"
+              cp "$FINAL/Server/performance/run_1/"mlperf_log_detail.txt  "$SRV/performance/run_1/"
+              # accuracy: reuse the Offline AccuracyOnly result (scenario-independent) - already truncated
+              cp "$OFF/accuracy/"* "$SRV/accuracy/" 2>/dev/null || true
+              # measurements + confs + README from Offline
+              for f in measurements.json user.conf mlperf.conf README.md; do [ -f "$OFF/$f" ] && cp "$OFF/$f" "$SRV/$f"; done
+              # TEST06 (server audit): copy the verified compliance output
+              if [ -d "$T06/TEST06" ]; then
+                mkdir -p "$SRV/TEST06/accuracy" "$SRV/TEST06/performance/run_1"
+                cp "$T06/TEST06/"mlperf_log_summary.txt "$SRV/TEST06/performance/run_1/" 2>/dev/null || true
+                cp "$T06/TEST06/"mlperf_log_detail.txt  "$SRV/TEST06/performance/run_1/" 2>/dev/null || true
+                # run_verification.py wrote the verified TEST06 tree under $T06 (-o $T06)
+                [ -d "$T06/TEST06/accuracy" ] && cp "$T06/TEST06/accuracy/"* "$SRV/TEST06/accuracy/" 2>/dev/null || true
+                cp "$T06/verify_accuracy.txt" "$SRV/TEST06/" 2>/dev/null || cp "$T06/TEST06/verify_accuracy.txt" "$SRV/TEST06/" 2>/dev/null || true
+              else echo "WARN: TEST06 output not found at $T06/TEST06"; fi
+              echo "===== (3) tree ====="; find "$MODELDIR" -maxdepth 3 -type d | sort
+              echo "===== (4) truncate accuracy logs (idempotent - skips already-truncated) ====="
+              INF=/shared/mlcommons-inference
+              [ -d "$INF/tools/submission" ] || git clone --depth 1 https://github.com/mlcommons/inference.git "$INF"
+              pip install -q --break-system-packages numpy pandas 2>/dev/null || true
+              BK=/shared/results/v61-deepseek-full/acc-backup; rm -rf "$BK"
+              python3 "$INF/tools/submission/truncate_accuracy_log.py" --input "$ROOT" --submitter "$SUBMITTER" --backup "$BK" 2>&1 | tail -6 || true
+              echo "===== (5) SUBMISSION CHECKER v6.1 ====="
+              cd "$INF"
+              python3 -m tools.submission.submission_checker.main \
+                --input "$ROOT" --version v6.1 --submitter "$SUBMITTER" \
+                --csv "$ROOT/summary-Crusoe-deepseek-512-v6.1.csv" 2>&1 \
+                | tee /shared/results/v61-deepseek-full/checker-deepseek-512-v6.1.log \
+                | grep -iE 'Results=|looks OK|ERROR|WARNING|required scenario|compliance|missing|does not|Traceback|NoneType' | tail -40
+              echo "CHECKER_EXIT=${PIPESTATUS[0]}"
+          resources: { requests: { cpu: "4", memory: 16Gi } }
+          volumeMounts: [{ name: shared, mountPath: /shared }]
+      volumes:
+        - { name: shared, persistentVolumeClaim: { claimName: mlperf-shared } }

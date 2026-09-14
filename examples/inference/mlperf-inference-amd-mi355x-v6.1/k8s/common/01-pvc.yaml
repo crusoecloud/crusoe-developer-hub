@@ -1,0 +1,15 @@
+# Shared filesystem for model weights, datasets, and benchmark results.
+# crusoe-fs is a shared FS CSI (Immediate binding, RWX) so every benchmark
+# pod on any node mounts the same data.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mlperf-shared
+  namespace: mlperf
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: crusoe-fs
+  resources:
+    requests:
+      storage: 500Ti

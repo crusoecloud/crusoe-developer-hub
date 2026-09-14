@@ -1,0 +1,38 @@
+# DeepSeek-R1 - verify the HF token (secret `hf-token`) is APPROVED for AMD's gated MLPerf model
+# BEFORE launching the ~366 GB download. A gated repo you lack access to returns 404 (not 403).
+# Prints whoami + repo file/shard/size on success.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ds-token-check
+  namespace: mlperf
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 1800
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: check
+          image: rocm/amd-mlperf:mi355x_llama2_70b_inference_6.0
+          command: ["/bin/bash","-lc"]
+          args:
+            - |
+              python3 - <<'EOF'
+              import os
+              from huggingface_hub import HfApi
+              api = HfApi(token=os.environ["HF_TOKEN"])
+              print("whoami:", api.whoami().get("name"))
+              repo = "amd/Deepseek-S3_sq_a05_v2_mlperf6_1"
+              try:
+                  info = api.model_info(repo, files_metadata=True)
+                  st = [f for f in info.siblings if f.rfilename.endswith('.safetensors')]
+                  total = sum((f.size or 0) for f in info.siblings)
+                  print(f"OK  {repo}  gated={info.gated}  files={len(info.siblings)}  safetensors={len(st)}  total=~{total/1e9:.0f} GB")
+              except Exception as e:
+                  print(f"FAIL {repo}: {type(e).__name__}: {e}  -> request access as this HF account")
+              EOF
+          env:
+            - name: HF_TOKEN
+              valueFrom: { secretKeyRef: { name: hf-token, key: token } }
+          resources: { requests: { cpu: "2", memory: 8Gi } }

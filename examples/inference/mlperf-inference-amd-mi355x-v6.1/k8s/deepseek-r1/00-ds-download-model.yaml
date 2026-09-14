@@ -1,0 +1,42 @@
+# DeepSeek-R1 v6.1 - download AMD's prequantized MLPerf model to the PVC.
+# GATED: needs an HF token (secret `hf-token`) whose account is APPROVED for
+# amd/Deepseek-S3_sq_a05_v2_mlperf6_1. Verify access first with a probe (see README).
+# ~350 GB → multi-hour; backoffLimit lets it resume. Dataset is separate (public, already staged).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ds-download-model
+  namespace: mlperf
+  labels: { app: mlperf-deepseek, role: download }
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata: { labels: { app: mlperf-deepseek, role: download } }
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: dl
+          image: rocm/amd-mlperf:mi355x_llama2_70b_inference_6.0
+          command: ["/bin/bash","-lc"]
+          args:
+            - |
+              set -x
+              DEST=/shared/models/deepseek-r1/S3_sq_a05_v2
+              mkdir -p "$DEST"
+              pip install -q -U "huggingface_hub[cli]" hf_transfer 2>/dev/null || true
+              export HF_HUB_ENABLE_HF_TRANSFER=1
+              echo "=== downloading amd/Deepseek-S3_sq_a05_v2_mlperf6_1 -> $DEST ==="
+              hf download amd/Deepseek-S3_sq_a05_v2_mlperf6_1 --token "$HF_TOKEN" --local-dir "$DEST" \
+                || huggingface-cli download amd/Deepseek-S3_sq_a05_v2_mlperf6_1 --token "$HF_TOKEN" --local-dir "$DEST"
+              echo "=== result ==="
+              du -sh "$DEST" 2>/dev/null
+              ls -la "$DEST" | head -20
+              echo "safetensor shards: $(ls "$DEST"/*.safetensors 2>/dev/null | wc -l)"
+          env:
+            - name: HF_TOKEN
+              valueFrom: { secretKeyRef: { name: hf-token, key: token } }
+          volumeMounts: [{ name: shared, mountPath: /shared }]
+          resources: { requests: { cpu: "8", memory: 32Gi } }
+      volumes:
+        - { name: shared, persistentVolumeClaim: { claimName: mlperf-shared } }

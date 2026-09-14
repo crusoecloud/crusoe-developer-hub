@@ -1,0 +1,77 @@
+# DeepSeek-R1 v6.1 multi-node ZMQ - SERVER HEAD with WARMUP (template).
+# Rendered by launch-mn-deepseek.sh (SCENARIO=server WARMUP=1). Enables AMD's dsr_code6_1
+# "warmup" fix on our existing deepseek_sglang_v0.5.15 image (which already carries the
+# run_warmup code + SGLang 0.5.15.post1.dev20260722, only missing the constants.py sample):
+#   (1) enable-deepseek-warmup.py injects the deepseek-r1 WarmUp.ENCODED_SAMPLES entry,
+#   (2) overlay server_mn_warmup.yaml (enable_warmup:True + prefill-delayer 280 + MoRI TPOT
+#       headroom) onto the image's server_mi355x_mn.yaml,
+#   (3) overlay the warmup user.conf (long min_duration to dilute any residual ramp).
+# Dedicated head (DEDICATED_HEAD=1 -> __LOCAL_WORKER__=0): pure SUT, all device_count GPUs remote.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${RUN}-head
+  namespace: mlperf
+  labels: { app: mlperf-ds-mn-server, role: head, benchmark: deepseek-r1, run: ${RUN} }
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 25200
+  ttlSecondsAfterFinished: 21600
+  template:
+    metadata: { labels: { app: mlperf-ds-mn-server, role: head, benchmark: deepseek-r1, run: ${RUN} } }
+    spec:
+      restartPolicy: Never
+      hostNetwork: true
+      hostIPC: true
+      imagePullSecrets: [{ name: regcred }]
+      nodeName: ${HEAD_NODE}
+      containers:
+        - name: head
+          image: <your-registry>/<your-project>/deepseek_sglang_v0.5.15
+          securityContext: { privileged: true }
+          command: ["/bin/bash","-lc"]
+          args:
+            - |
+              set -x
+              ulimit -Sn 524288 2>/dev/null || true
+              echo "fd limit now: $(ulimit -Sn)"
+              HEAD_IP=${HEAD_IP}; OUT=${OUT}
+              mkdir -p /model /data/deepseek-r1 "$OUT/head"
+              rm -f "$OUT/head"/mlperf_log_*.txt "$OUT/head"/mlperf_log_*.json "$OUT/head-sut.log" "$OUT"/worker-*.log 2>/dev/null || true
+              ln -sfn /shared/models/deepseek-r1/S3_sq_a05_v2 /model/S3_sq_a05_v2
+              ln -sfn /shared/datasets/deepseek-r1/mlperf_deepseek_r1_dataset_4388_fp8_eval.pkl \
+                      /data/deepseek-r1/mlperf_deepseek_r1_dataset_4388_fp8_eval.pkl
+              mkdir -p /shared/ds-cache/hf; rm -rf /root/.cache && ln -sfn /shared/ds-cache /root/.cache
+              if [ -f /shared/patches-ds/harden-registration.py ]; then python3 /shared/patches-ds/harden-registration.py; else echo "NOTE: ds server head patch not staged"; fi
+              cd /lab-mlperf-inference/code
+              # --- WARMUP enablement (AMD dsr_code6_1) ---
+              [ -f /shared/patches-ds/enable-deepseek-warmup.py ] && python3 /shared/patches-ds/enable-deepseek-warmup.py || echo "WARN: warmup patch missing"
+              [ -f /shared/patches-ds/server_mn_warmup.yaml ] && cp /shared/patches-ds/server_mn_warmup.yaml deepseek-r1/server_mi355x_mn.yaml && echo "overlaid warmup server config"
+              # AMD's config sets model_path with a trailing slash, which trips the harness model-path
+              # guard (writes INVALID + skips the measured run). Normalize to the exact allowed path.
+              sed -i 's|model_path: /model/S3_sq_a05_v2/|model_path: /model/S3_sq_a05_v2|' deepseek-r1/server_mi355x_mn.yaml
+              [ -f /shared/patches-ds/user_mi355x_mn_warmup.conf ] && cp /shared/patches-ds/user_mi355x_mn_warmup.conf deepseek-r1/user_mi355x_mn.conf && echo "overlaid warmup user.conf"
+              echo "warmup check -> config: $(grep -m1 enable_warmup deepseek-r1/server_mi355x_mn.yaml) | constants deepseek entries: $(grep -c "'deepseek-r1'" harness_llm/backends/common/constants.py)"
+              # (1) local worker for this node's 8 GPUs - gated: DEDICATED head skips it
+              if [ "__LOCAL_WORKER__" = "1" ]; then
+                python3 harness_llm/backends/vllm/zmq/distributed_async_server.py \
+                  --config-path deepseek-r1/ --config-name server_mi355x_mn --backend zmq \
+                  node_id=$(hostname) headnode_address=${HEAD_IP}:12345 > "$OUT/worker-head.log" 2>&1 &
+                sleep 5
+              else
+                echo "DEDICATED head: no co-located worker (all ${DEVICE_COUNT} GPUs are remote workers)"
+              fi
+              # (2) SUT client - Server scenario, warmup runs on each worker before LoadGen measures
+              bash run_harness.sh --config-path deepseek-r1/ --config-name server_mi355x_mn --backend zmq \
+                test_mode=performance port=12345 harness_config.device_count=${DEVICE_COUNT} \
+                harness_config.target_qps=${TARGET_QPS} \
+                harness_config.user_conf_path=/lab-mlperf-inference/code/deepseek-r1/user_mi355x_mn.conf \
+                harness_config.output_log_dir="$OUT/head" 2>&1 | tee "$OUT/head-sut.log" | tail -60
+              echo "===== ${RUN} SERVER-WARMUP RESULT (device_count=${DEVICE_COUNT}, qps=${TARGET_QPS}) ====="
+              grep -iE 'Result is|Completed tokens per second|Completed samples per second|Scheduled samples per second|99.00 percentile first token|Time per Output Token|Min Duration' "$OUT/head/mlperf_log_summary.txt" 2>/dev/null
+              true
+          resources: { requests: { amd.com/gpu: 8, cpu: "180", memory: 1800Gi }, limits: { amd.com/gpu: 8 } }
+          volumeMounts: [{ name: shared, mountPath: /shared }, { name: dshm, mountPath: /dev/shm }]
+      volumes:
+        - { name: shared, persistentVolumeClaim: { claimName: mlperf-shared } }
+        - { name: dshm, emptyDir: { medium: Memory, sizeLimit: 512Gi } }
