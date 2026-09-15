@@ -6,7 +6,6 @@ ipywidgets>=8.0.0
 # Dataset download
 datasets>=3.0.0
 
-# Crusoe API client and local configuration
+# Crusoe API client
 openai>=1.37.0,<3.0
 requests>=2.31.0
-python-dotenv>=1.0.0
