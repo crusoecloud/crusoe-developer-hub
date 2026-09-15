@@ -2,7 +2,7 @@
 
 Upload a multi-gigabyte training file to Crusoe with the multipart path in the OpenAI-compatible Uploads API, then hand the assembled file to a fine-tuning job. The [notebook](multipart-upload.ipynb) is the companion to the blog post *Making Room for Bigger Fine-Tuning Datasets*. It builds a 1.2 GB chat-format JSONL file from a public dataset, uploads it in 128 MiB parts in parallel, checks which parts have landed, completes the upload with a checksum, and polls until Crusoe returns a ready-to-use file id.
 
-<div align="center"><img src="assets/multipart-flow.png" alt="A 1.2 GB file split into 128 MiB parts, sent in parallel into an upload session, completed with ordered part ids and a checksum, and assembled by Crusoe into one file id" width="900"></div>
+<div align="center"><img src="assets/multipart-flow.png" alt="A training file split into parts on your machine, sent in parallel into an upload session on Crusoe, completed with ordered part ids and a checksum, and assembled into one file id" width="900"></div>
 
 This example is about the API. For a full fine-tune, deploy, and evaluate walkthrough, see [PII redaction](../pii-redaction/).
 
@@ -35,7 +35,7 @@ The notebook walks through:
 
 ## Expected output
 
-With the full split: 207,865 conversations, a 1,185 MiB file, and 10 parts. Our run moved the file in 56 seconds at about 21 MiB/s with eight workers and Crusoe assembled it in about 20 seconds. Transfer time depends on your link. The parts list may still show a few parts right after completion; they are released within a minute or so.
+With the full split: 207,865 conversations, a 1,185 MiB file, and 10 parts. The recorded run in the notebook moved the file in 38 seconds at about 32 MiB/s with eight workers, and Crusoe assembled it in about 17 seconds. Transfer time depends on your link. The parts list may still show a few parts right after completion; they are released within a minute or so.
 
 ## Costs and cleanup
 
