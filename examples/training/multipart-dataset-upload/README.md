@@ -8,7 +8,7 @@ This example is about the API. For a full fine-tune, deploy, and evaluate walkth
 
 ## Prerequisites
 
-- Python 3.12, a browser for JupyterLab, and internet access to Crusoe and Hugging Face. No GPU is involved.
+- Python 3.12, a Jupyter client such as VS Code or JupyterLab, and internet access to Crusoe and Hugging Face. No GPU is involved.
 - A Crusoe Inference API key, created in [Inference API keys](https://console.crusoecloud.com/security/inference-api-keys). The optional last step submits a fine-tuning job and needs access to Serverless Fine-Tuning.
 - About 4 GB of free disk for the dataset cache and the training file, and about 1 GB of free RAM for eight parts in flight.
 
@@ -20,10 +20,9 @@ From the repository root:
 cd examples/training/multipart-dataset-upload
 python3.12 -m venv .venv && source .venv/bin/activate
 python -m pip install -r requirements.txt
-python -m jupyterlab multipart-upload.ipynb
 ```
 
-Paste your key into `CRUSOE_API_KEY` in the setup cell, then run the cells in order. Everything the notebook needs is defined inside it; there are no imports from elsewhere in the repository. Three constants control the transfer: `PART_SIZE` (128 MiB, Crusoe's ceiling), `WORKERS` (eight parallel uploads), and `MAX_ROWS` (unset for the full split; set an integer for a smaller trial file).
+Open [multipart-upload.ipynb](multipart-upload.ipynb) with this environment as the kernel, paste your key into `CRUSOE_API_KEY` in the setup cell, and run the cells in order. The notebook keeps the API calls in view; the dataset export, part reading, parallel sends with retry, and polling live in [utils.py](utils.py) next to it. Three constants control the transfer: `PART_SIZE` (128 MiB, Crusoe's ceiling), `WORKERS` (eight parallel uploads), and `MAX_ROWS` (unset for the full split; set an integer for a smaller trial file).
 
 The notebook walks through:
 
@@ -35,7 +34,7 @@ The notebook walks through:
 
 ## Expected output
 
-With the full split: 207,865 conversations, a 1,185 MiB file, and 10 parts. The recorded run in the notebook moved the file in 38 seconds at about 32 MiB/s with eight workers, and Crusoe assembled it in about 17 seconds. Transfer time depends on your link. The parts list may still show a few parts right after completion; they are released within a minute or so.
+With the full split: 207,865 conversations, a 1,185 MiB file, and 10 parts. The recorded run in the notebook moved the file in 32 seconds at about 37 MiB/s with eight workers, and Crusoe assembled it in 17 seconds. Transfer time depends on your link.
 
 ## Costs and cleanup
 
