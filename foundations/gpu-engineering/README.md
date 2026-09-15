@@ -1,6 +1,6 @@
 # GPU Programming with Triton
 
-A hands-on introduction to GPU programming using [Triton](https://triton-lang.org/), the Python-embedded language and compiler for writing GPU kernels. The track starts with how a GPU executes code and how its memory is organized, because every performance decision in a kernel comes back to those two things. It then walks through five kernels of increasing subtlety, each as a set of short scripts you can run, benchmark, and modify on any NVIDIA GPU.
+A hands-on introduction to GPU programming using [Triton](https://triton-lang.org/), the Python-embedded language and compiler for writing GPU kernels. The track starts with how a GPU executes code and how its memory is organized, because every performance decision in a kernel comes back to those two things. It then walks through a short lesson in CUDA C++ terms followed by five Triton kernels of increasing subtlety, each as a set of short programs you can run, benchmark, and modify on any NVIDIA GPU.
 
 You need to be comfortable with Python and PyTorch tensors. No CUDA experience is assumed. Every script is self-contained and checks its own result against PyTorch before it reports anything.
 
@@ -80,7 +80,16 @@ NVIDIA calls this execution style [SIMT, single instruction, multiple threads](h
 
 ![Two columns of four boxes connected by arrows. Software: thread, warp, block, grid. Hardware: arithmetic unit, warp scheduler, streaming multiprocessor, GPU. Each software level runs on the hardware level beside it.](assets/execution-model.png)
 
+![Three stages left to right: eight threads from a hello kernel, the single 32-lane warp they occupy with 24 lanes idle, and one SM among 142 holding up to 48 warps.](assets/threads-warps-sms.png)
+
+![Two rows of boxes. Software, chosen at launch: grid, block, thread. Hardware, decided by the GPU: thread, warp, SM. A dashed line joins the two thread boxes.](assets/two-hierarchies.png)
+
 A **streaming multiprocessor (SM)** is the hardware unit that executes blocks. It holds arithmetic units, a register file, and a slice of shared memory, and it can run several blocks at once if their register and shared-memory needs fit. An NVIDIA L40S has 142 SMs; an H100 has 132. When you launch a grid of a thousand blocks, the SMs run the first few hundred immediately and pull the rest from the grid as they finish.
+
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="assets/blocks-to-sms.png">
+  <img src="assets/blocks-to-sms.gif" alt="Animation. A grid of twelve blocks on the left, four SMs on the right with two slots each. Blocks move into free slots, run with progress bars, finish at different times, and freed slots are refilled until the grid is empty." width="1000">
+</picture>
 
 ### Triton programs blocks, not threads
 
@@ -110,7 +119,12 @@ The latency figures are measured values for Hopper-generation hardware; other ge
 
 ### Latency hiding and occupancy
 
-A GPU does not try to make each memory access fast. It accepts that each one is slow and keeps thousands of threads in flight, so that while some wait for data, others compute. By the time the scheduler cycles back to the first warp, its data has usually arrived. This only works if enough warps are resident on each SM, which is what occupancy measures: the fraction of the SM's warp slots that are in use. Register and shared-memory usage per block set the ceiling, and the [CUDA best practices guide](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#occupancy) covers how to reason about it. Triton allocates registers for you, but the effect is still visible: a fused kernel that keeps many intermediate values alive uses more registers per thread, and past a threshold that lowers occupancy and can slow the kernel down.
+A GPU does not try to make each memory access fast. It accepts that each one is slow and keeps thousands of threads in flight, so that while some wait for data, others compute.
+
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="assets/latency-hiding.png">
+  <img src="assets/latency-hiding.gif" alt="Animation. Four warps on one SM drawn as timelines. Each issues a load, waits, then computes briefly. The waits are staggered, so the arithmetic units row at the bottom stays busy." width="1000">
+</picture> By the time the scheduler cycles back to the first warp, its data has usually arrived. This only works if enough warps are resident on each SM, which is what occupancy measures: the fraction of the SM's warp slots that are in use. Register and shared-memory usage per block set the ceiling, and the [CUDA best practices guide](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#occupancy) covers how to reason about it. Triton allocates registers for you, but the effect is still visible: a fused kernel that keeps many intermediate values alive uses more registers per thread, and past a threshold that lowers occupancy and can slow the kernel down.
 
 ### Memory-bound and compute-bound kernels
 
@@ -203,28 +217,42 @@ Three CUDA C++ programs under [`00_gpu_basics/cuda/`](./00_gpu_basics/cuda/), bu
 
 - [`01_hello_kernel.cu`](./00_gpu_basics/cuda/01_hello_kernel.cu) launches one block of eight threads that each print their `threadIdx.x`. It introduces `__global__`, the `<<<blocks, threads>>>` launch syntax, and `cudaDeviceSynchronize`.
 - [`02_square_array.cu`](./00_gpu_basics/cuda/02_square_array.cu) squares eight numbers with one thread each. It introduces the two memories and the five calls that move data between them: `cudaMalloc`, `cudaMemcpy` in both directions, the launch, and `cudaFree`.
-- The many-block vector addition that completes the sequence lives in [`01_vector_add/cuda/vector_add.cu`](./01_vector_add/cuda/vector_add.cu), so it sits beside the Triton kernel it mirrors.
+
+![Host with a CPU and system memory on the left, device with a GPU and global memory on the right, a PCIe bus between them with cudaMemcpy arrows in both directions.](assets/host-device-memories.png)
+
+![The five steps of a CUDA program listed between a host memory column and a device memory column: allocate, copy in, launch, copy out, free.](assets/host-device-lifecycle.png)
+
+- The many-block vector addition that completes the sequence lives in [`01_vector_add/cuda/vector_add.cu`](./01_vector_add/cuda/vector_add.cu), so it sits beside the Triton kernel it mirrors. Its index formula is the one every elementwise CUDA kernel uses:
+
+![Twelve output elements above three blocks of four threads. The middle block's threads point at elements 4 to 7, and the formula i = blockIdx.x * blockDim.x + threadIdx.x is evaluated for block 1, thread 2, giving 6.](assets/global-index.png)
+
 
 Four Python scripts show the same ideas from the PyTorch side:
 
 - [`profile_add_relu.py`](./00_gpu_basics/profile_add_relu.py) prints the `torch.profiler` table for `(a + b).relu()`, which shows two kernels.
+
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="assets/one-line-two-kernels.png">
+  <img src="assets/one-line-two-kernels.gif" alt="One line of PyTorch shown as two kernel launches. The add kernel reads a and b and writes tmp to global memory; the relu kernel reads tmp back and writes c. A tally counts two launches, two kernels and five trips through memory." width="1000">
+</picture>
+
 - [`count_kernels.py`](./00_gpu_basics/count_kernels.py) counts the kernels behind the same expression in eager mode and under `torch.compile`, where it becomes one Triton kernel.
 - [`async_timing.py`](./00_gpu_basics/async_timing.py) shows that wall-clock time around a launch measures the CPU, not the GPU.
 - [`know_thy_gpu.py`](./00_gpu_basics/know_thy_gpu.py) prints the SM count, warp size, warp slots per SM, memory sizes, and works through how many waves a one-million-element launch takes.
 
 ### 01. Vector addition
 
-[`v0_basic.py`](./01_vector_add/v0_basic.py) runs the kernel above at four sizes, including one that is not a multiple of the block size, and prints `OK` for each. [`v1_benchmark.py`](./01_vector_add/v1_benchmark.py) sweeps sizes from one thousand to sixteen million elements and reports GB/s against PyTorch's add. [`v2_kernel_inspection.py`](./01_vector_add/v2_kernel_inspection.py) dumps the compiler stages. [`cuda/vector_add.cu`](./01_vector_add/cuda/vector_add.cu) is the same kernel in CUDA C++, with a CPU correctness check and CUDA event timing, for comparison with the Triton version.
+[`v0_basic.py`](./01_vector_add/v0_basic.py) runs the kernel above at four sizes, including one that is not a multiple of the block size, and prints `OK` for each. [`v1_benchmark.py`](./01_vector_add/v1_benchmark.py) sweeps sizes from one thousand to sixteen million elements and reports GB/s against PyTorch's add. [`v2_kernel_inspection.py`](./01_vector_add/v2_kernel_inspection.py) dumps the compiler stages. [`cuda/vector_add.cu`](./01_vector_add/cuda/vector_add.cu) is the same kernel in CUDA C++, with a CPU correctness check and CUDA event timing, for comparison with the Triton version. It writes a 256 MB buffer before each timed launch to evict the inputs from L2, as `do_bench` does; without that step, sizes that fit in the L40S's 96 MiB L2 report cache bandwidth well above the DRAM ceiling.
 
 Reference numbers from an NVIDIA L40S:
 
-| Elements | Triton GB/s | PyTorch GB/s |
-| --- | --- | --- |
-| 65,536 | 110 | 110 |
-| 1,048,576 | 559 | 534 |
-| 16,777,216 | 629 | 628 |
+| Elements | Triton GB/s | PyTorch GB/s | CUDA C++ GB/s |
+| --- | --- | --- | --- |
+| 65,536 | 110 | 110 | 129 |
+| 1,048,576 | 559 | 534 | 614 |
+| 16,777,216 | 629 | 628 | 645 |
 
-Small inputs cannot saturate the GPU: the fixed cost of a launch dominates and throughput is low for both implementations. Above roughly a million elements the kernel is bound by DRAM bandwidth, and a ten-line Triton kernel matches the tuned CUDA kernel inside PyTorch because both are limited by the same memory system.
+Small inputs cannot saturate the GPU: the fixed cost of a launch dominates and throughput is low for every implementation. Above roughly a million elements the kernel is bound by DRAM bandwidth, and a ten-line Triton kernel lands within a few percent of both the tuned kernel inside PyTorch and the hand-written CUDA C++ version, because all three are limited by the same memory system.
 
 ### 02. SiLU
 

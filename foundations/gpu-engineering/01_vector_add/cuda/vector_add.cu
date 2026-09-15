@@ -1,29 +1,24 @@
-// Vector addition in CUDA C++, for comparison with the Triton kernel in v0_basic.py.
+// Vector addition in CUDA C++, the counterpart of the Triton kernel in v0_basic.py.
 //
-// Build and run (from this directory):
-//     make && ./vector_add
+// Build and run: make && ./vector_add
 //
-// The kernel is the standard many-block form: every thread computes one output
-// element, its position comes from blockIdx, blockDim and threadIdx, and a bounds
-// check protects the final block, which usually extends past the end of the array.
-// The program checks the result against a CPU loop, then times the kernel with
-// CUDA events and reports GB/s, counting three arrays of four-byte floats.
+// Checks the result against a CPU loop, then times the kernel with CUDA events
+// and reports GB/s over three float arrays. A 256 MB buffer is written before each
+// timed launch to evict the inputs from L2, as triton.testing.do_bench does.
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <cstdlib>
 #include <vector>
 
 __global__ void add_kernel(const float* x, const float* y, float* out, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;   // global element index
-    if (i < n) {                                     // the last block runs past the end
+    if (i < n) {                                     // last block may overrun
         out[i] = x[i] + y[i];
     }
 }
 
-// Runs the kernel once for correctness, then `reps` more times for timing.
-// Returns the median kernel time in milliseconds.
+// Median kernel time in milliseconds over `reps` launches; *ok reports correctness.
 static float run(int n, int block, int reps, bool* ok) {
     const size_t bytes = (size_t)n * sizeof(float);
     std::vector<float> h_x(n), h_y(n), h_out(n);
@@ -43,12 +38,14 @@ static float run(int n, int block, int reps, bool* ok) {
         if (fabsf(h_out[i] - (h_x[i] + h_y[i])) > 1e-5f) { *ok = false; break; }
     }
 
-    // Time the kernel alone. Events are recorded on the GPU's own timeline, so this
-    // measures kernel execution rather than the CPU issuing the launch.
     cudaEvent_t start, stop;
     cudaEventCreate(&start); cudaEventCreate(&stop);
+    const size_t flush_bytes = 256u << 20;
+    void* flush = nullptr;
+    cudaMalloc(&flush, flush_bytes);
     std::vector<float> ms(reps);
     for (int r = 0; r < reps; ++r) {
+        cudaMemsetAsync(flush, 0, flush_bytes);      // evict x, y, out from L2
         cudaEventRecord(start);
         add_kernel<<<grid, block>>>(d_x, d_y, d_out, n);
         cudaEventRecord(stop);
@@ -58,7 +55,7 @@ static float run(int n, int block, int reps, bool* ok) {
     std::sort(ms.begin(), ms.end());
 
     cudaEventDestroy(start); cudaEventDestroy(stop);
-    cudaFree(d_x); cudaFree(d_y); cudaFree(d_out);
+    cudaFree(flush); cudaFree(d_x); cudaFree(d_y); cudaFree(d_out);
     return ms[reps / 2];
 }
 
