@@ -10,6 +10,7 @@ This example is about the API. For a full fine-tune, deploy, and evaluate walkth
 
 - Python 3.12, a Jupyter client such as VS Code or JupyterLab, and internet access to Crusoe and Hugging Face. No GPU is involved.
 - A Crusoe Inference API key, created in [Inference API keys](https://console.crusoecloud.com/security/inference-api-keys). The optional last step submits a fine-tuning job and needs access to Serverless Fine-Tuning.
+- A Hugging Face token, created in [Access Tokens](https://huggingface.co/settings/tokens), for the dataset download.
 - About 4 GB of free disk for the dataset cache and the training file, and about 1 GB of free RAM for eight parts in flight.
 
 ## Run it
@@ -22,19 +23,21 @@ python3.12 -m venv .venv && source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
-Open [multipart-upload.ipynb](multipart-upload.ipynb) with this environment as the kernel, paste your key into `CRUSOE_API_KEY` in the setup cell, and run the cells in order. The notebook keeps the API calls in view; the dataset export, part reading, parallel sends with retry, and polling live in [utils.py](utils.py) next to it. Three constants control the transfer: `PART_SIZE` (128 MiB, Crusoe's ceiling), `WORKERS` (eight parallel uploads), and `MAX_ROWS` (unset for the full split; set an integer for a smaller trial file).
+Open [multipart-upload.ipynb](multipart-upload.ipynb) with this environment as the kernel, paste your tokens into `CRUSOE_API_KEY` and `HF_TOKEN` in the setup cell, and run the cells in order. The notebook keeps the API calls in view; the dataset export, part reading, parallel sends with retry, and polling live in [utils.py](utils.py) next to it. Three constants control the transfer: `PART_SIZE` (128 MiB, Crusoe's ceiling), `WORKERS` (eight parallel uploads), and `MAX_ROWS` (unset for the full split; set an integer for a smaller trial file).
 
 The notebook walks through:
 
-1. **Build the file.** Download the `train_sft` split of [HuggingFaceH4/ultrachat_200k](https://huggingface.co/datasets/HuggingFaceH4/ultrachat_200k), about 208,000 conversations, and write `data/train.jsonl`.
-2. **Create the upload.** Declare the filename, purpose `fine-tune`, byte count, and MIME type. The session stays open for two hours.
-3. **Add the parts.** Read each 128 MiB part by offset, send it from a thread pool, and re-send only a part that fails. Then query the parts list and the pending uploads list to see the session from the outside.
-4. **Complete and poll.** Pass the ordered part ids and the file's MD5. Crusoe returns `pending` immediately and assembles in the background; poll the upload until it reports `completed` and read the file id.
-5. **Use, cancel, clean up.** The fine-tuning job call sits behind `SUBMIT_FINE_TUNING_JOB = False`. A throwaway session shows cancellation, and `DELETE_UPLOADED_FILE = True` removes the assembled file.
+- **Prerequisite: build the file.** Download the `train_sft` split of [HuggingFaceH4/ultrachat_200k](https://huggingface.co/datasets/HuggingFaceH4/ultrachat_200k), about 208,000 conversations, and write `data/train.jsonl`.
+1. **Create the upload.** Declare the filename, purpose `fine-tune`, byte count, and MIME type. The session stays open for two hours.
+2. **Add the parts.** Read each 128 MiB part by offset, send it from a thread pool, and re-send only a part that fails. Then query the parts list and the pending uploads list to see the session from the outside.
+3. **Complete the upload.** Pass the ordered part ids and the file's MD5. Crusoe returns `pending` immediately and assembles in the background.
+4. **Poll until the file is ready.** Retrieve the upload until it reports `completed` and read the file id.
+5. **Use the file.** The fine-tuning job call sits behind `SUBMIT_FINE_TUNING_JOB = False`.
+6. **Cancel and clean up.** A throwaway session shows cancellation, and `DELETE_UPLOADED_FILE = True` removes the assembled file.
 
 ## Expected output
 
-With the full split: 207,865 conversations, a 1,185 MiB file, and 10 parts. The recorded run in the notebook moved the file in 32 seconds at about 37 MiB/s with eight workers, and Crusoe assembled it in 17 seconds. Transfer time depends on your link.
+With the full split: 207,865 conversations, a 1,185 MiB file, and 10 parts. The recorded run in the notebook moved the file in 29 seconds at about 41 MiB/s with eight workers, and Crusoe assembled it in 17 seconds. Transfer time depends on your link.
 
 ## Costs and cleanup
 
