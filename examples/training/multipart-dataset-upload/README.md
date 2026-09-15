@@ -1,6 +1,6 @@
 # Upload a large fine-tuning dataset in parts
 
-Upload a multi-gigabyte training file to Crusoe with the multipart path in the OpenAI-compatible Uploads API, then hand the assembled file to a fine-tuning job. The [notebook](multipart-upload.ipynb) is the companion to the blog post *Making Room for Bigger Fine-Tuning Datasets*. It builds a 1.2 GB chat-format JSONL file from a public dataset, uploads it in 128 MiB parts in parallel, checks which parts have landed, completes the upload with a checksum, and polls until Crusoe returns a ready-to-use file id.
+Upload a multi-gigabyte training file to Crusoe with the multipart path in the OpenAI-compatible Uploads API, then hand the assembled file to a fine-tuning job. The [notebook](multipart-upload.ipynb) is the companion to the blog post *Making Room for Bigger Fine-Tuning Datasets*. It walks through the four steps with a public chat dataset: create the upload, send the parts in parallel, complete with a checksum, and poll until Crusoe returns a ready-to-use file id.
 
 <div align="center"><img src="assets/multipart-flow.png" alt="A training file split into parts on your machine, sent in parallel into an upload session on Crusoe, completed with ordered part ids and a checksum, and assembled into one file id" width="900"></div>
 
@@ -24,7 +24,7 @@ python3.12 -m venv .venv && source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
-Then open [multipart-upload.ipynb](multipart-upload.ipynb), select the `.venv` interpreter as the kernel, paste your tokens into `CRUSOE_API_KEY` and `HF_TOKEN` in the setup cell, and run the cells in order. The notebook builds a 1.2 GB training file first, so the prerequisite cell takes a few minutes; set `MAX_ROWS` to an integer there for a quicker trial. Helpers for the dataset export, part reading, parallel sends, and polling live in [utils.py](utils.py) next to the notebook.
+Then open [multipart-upload.ipynb](multipart-upload.ipynb), select the `.venv` interpreter as the kernel, paste your tokens into `CRUSOE_API_KEY` and `HF_TOKEN` in the setup cell, and run the cells in order. The notebook builds a large training file from a public dataset first, so the prerequisite cell takes a few minutes; set `MAX_ROWS` to an integer there for a quicker trial. Helpers for the dataset export, part reading, parallel sends, and polling live in [utils.py](utils.py) next to the notebook.
 
 The assembled file persists in your account until you delete it. Set `DELETE_UPLOADED_FILE = True` in the last cell when you are done, and leave `SUBMIT_FINE_TUNING_JOB = False` unless you intend to pay for a training run over 208,000 conversations.
 
