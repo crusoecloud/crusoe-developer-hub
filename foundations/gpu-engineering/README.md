@@ -290,11 +290,4 @@ RoPE, used in Llama-family models to encode token position into attention querie
 
 The input `x` has `feature_dim` elements per row, so program `m` reads its row starting at `m * feature_dim`. The precomputed `cos` and `sin` tables have `feature_dim / 2` elements per row, so the same program reads its angles starting at `m * feature_dim / 2`. One program handles one sequence position, loads both halves of `x` and the matching angle row with three different offset expressions, and stores both rotated halves. Getting those offsets right is the whole kernel; this is the pattern for any operation whose tensors do not share a layout. [`v1_benchmark.py`](./05_rope/v1_benchmark.py) sweeps sequence lengths at a head dimension of 128 and shows the Triton kernel at roughly 570 GB/s against about 360 GB/s for the chunk-and-cat PyTorch reference on the L40S, because the reference materializes intermediate tensors that the fused kernel never writes.
 
-## Further reading
-
-- [Triton documentation and tutorials](https://triton-lang.org/main/getting-started/tutorials/index.html), whose vector-add and fused-softmax tutorials are the natural next step after this track.
-- *GPU Programming with Triton* by Harshwardhan Fartale (Manning, early access), which develops the execution model, memory hierarchy, and fusion material here into full chapters and continues through reductions, matrix multiplication, and attention.
-- *CUDA for Deep Learning* by Elliot Arledge (Manning, early access), chapters 1 and 2, for the same concepts from the CUDA side: host and device, `threadIdx` and `blockIdx`, and the explicit memory transfers that Triton hides.
-- [NVIDIA CUDA C++ Programming Guide](https://docs.nvidia.com/cuda/cuda-c-programming-guide/) and [CUDA C++ Best Practices Guide](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/), the primary references for the execution model, memory hierarchy, occupancy, and divergence described above.
-
 [All foundations](../README.md)
