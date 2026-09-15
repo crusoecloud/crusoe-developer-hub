@@ -49,9 +49,6 @@ coverage/
 *.swo
 *~
 
-# Local tooling
-.claude/
-
 # Asset sources are internal; only rendered images are published
 **/assets/*.md
 **/assets/*.py
