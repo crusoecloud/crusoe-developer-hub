@@ -1,0 +1,33 @@
+# stages and PYTHON_VERSION are inherited from the root .gitlab-ci.yml.
+variables:
+  MULTIPART_PATH: "examples/training/multipart-dataset-upload"
+
+.multipart-base:
+  image: python:${PYTHON_VERSION}   # full image ships make; slim would need apt-get
+  variables:
+    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  cache:
+    key:
+      files: ["${MULTIPART_PATH}/requirements.txt"]
+      prefix: multipart-py${PYTHON_VERSION}
+    paths: [".cache/pip"]
+  rules:
+    - if: '$CI_COMMIT_TAG'
+      when: never
+    - changes: ["examples/training/multipart-dataset-upload/**/*"]
+  before_script:
+    - cd ${MULTIPART_PATH}
+    - make dev-install
+
+multipart-dataset-upload:lint:
+  extends: .multipart-base
+  stage: lint
+  script:
+    - make lint
+    - make format-check
+
+multipart-dataset-upload:test:
+  extends: .multipart-base
+  stage: test
+  script:
+    - make test

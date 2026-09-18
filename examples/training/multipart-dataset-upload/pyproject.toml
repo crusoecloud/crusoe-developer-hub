@@ -1,0 +1,33 @@
+# Tooling config only (this solution installs via requirements.txt, not as a package).
+# Ruff rules mirror applications/gateway so `make lint` matches the platform's checks.
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+lint.select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+]
+
+lint.ignore = [
+    "E501",  # line too long (handled by the formatter)
+    "E402",  # module-level import not at top (intentional in tests for sys.path setup)
+]
+
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
