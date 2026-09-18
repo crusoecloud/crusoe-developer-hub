@@ -1,2 +1,19 @@
-# Local training file built by the notebook
-/data/
+# Local secrets
+.env
+
+# Resumable upload state
+.crusoe-upload-state.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Tooling caches
+.ruff_cache/
+.pytest_cache/
+
+# Generated notebook (jupytext converts run.py -> run.ipynb) + Jupyter checkpoints
+run.ipynb
+.ipynb_checkpoints/

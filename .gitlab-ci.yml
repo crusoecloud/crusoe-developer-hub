@@ -1,0 +1,18 @@
+default:
+  interruptible: true
+
+# One pipeline per change: MRs and the default branch, no duplicate branch pipelines.
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - when: never
+
+stages: [lint, test]
+
+variables:
+  PYTHON_VERSION: "3.10"
+
+# Each example self-registers by adding its own .gitlab-ci.yml; the glob picks it up.
+include:
+  - local: 'examples/**/.gitlab-ci.yml'
