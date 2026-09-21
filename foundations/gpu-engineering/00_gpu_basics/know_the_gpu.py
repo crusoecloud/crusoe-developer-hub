@@ -1,6 +1,6 @@
 """Print the handful of hardware facts the lessons keep referring to.
 
-Usage: python know_thy_gpu.py
+Usage: python know_the_gpu.py
 """
 
 import torch
