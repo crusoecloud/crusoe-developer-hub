@@ -2,8 +2,8 @@
 
 Usage: python count_kernels.py [n_elements]
 
-Prints the names of the kernels the GPU executed for c = (a + b).relu(), first in
-eager mode (expect two kernels) and then under torch.compile (expect one).
+Prints the name and GPU time of each kernel the GPU executed for c = (a + b).relu(),
+first in eager mode (expect two kernels) and then under torch.compile (expect one).
 """
 
 import sys
@@ -19,12 +19,25 @@ def add_relu(a, b):
 
 
 def gpu_kernel_rows(fn, *args):
-    """Run fn once under the profiler and return the names of the kernels the GPU executed."""
+    """Run fn once under the profiler and return (name, GPU time in us) per kernel."""
     torch.cuda.synchronize()
     with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
         fn(*args)
         torch.cuda.synchronize()  # wait for the GPU before reading the trace
-    return [e.name for e in prof.events() if e.device_type == torch.autograd.DeviceType.CUDA]
+    return [
+        (e.name, e.device_time)
+        for e in prof.events()
+        if e.device_type == torch.autograd.DeviceType.CUDA
+    ]
+
+
+def report(label, rows, width=60):
+    total = sum(t for _, t in rows)
+    print(f"\n{label}: {len(rows)} kernel(s), {total:.3f} us on the GPU")
+    for name, t in rows:
+        if len(name) > width:  # the eager kernel names are template signatures
+            name = name[: width - 3] + "..."
+        print(f"  {t:8.3f} us  {name}")
 
 
 if __name__ == "__main__":
@@ -35,14 +48,8 @@ if __name__ == "__main__":
 
     add_relu(a, b)  # warm up once so allocator setup stays out of the trace
 
-    eager = gpu_kernel_rows(add_relu, a, b)
-    print(f"\neager: {len(eager)} kernel(s)")
-    for name in eager:
-        print(f"  {name}")
+    report("eager", gpu_kernel_rows(add_relu, a, b))
 
     compiled = torch.compile(add_relu)
     compiled(a, b)  # the first call compiles; never profile that one
-    fused = gpu_kernel_rows(compiled, a, b)
-    print(f"\ntorch.compile: {len(fused)} kernel(s)")
-    for name in fused:
-        print(f"  {name}")
+    report("torch.compile", gpu_kernel_rows(compiled, a, b))

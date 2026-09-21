@@ -32,13 +32,16 @@ def add_kernel(
     tl.store(output_ptr + offsets, x + y, mask=mask)
 
 
-def add(x: torch.Tensor, y: torch.Tensor):
+def add(x: torch.Tensor, 
+        y: torch.Tensor, 
+        BLOCK_SIZE=1024):
+
     output = torch.empty_like(x)
     n_elements = x.numel()
     grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
-    compiled = add_kernel[grid](x, y, output, n_elements, BLOCK_SIZE=1024)
-    return output, compiled
+    compiled = add_kernel[grid](x, y, output, n_elements, BLOCK_SIZE=BLOCK_SIZE)
 
+    return output, compiled
 
 if __name__ == "__main__":
     print(f"Running on {DEVICE} - {torch.cuda.get_device_name(DEVICE)}")

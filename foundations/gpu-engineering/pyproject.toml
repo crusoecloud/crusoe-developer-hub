@@ -1,0 +1,30 @@
+[project]
+name = "gpu-engineering"
+version = "0.1.0"
+description = "A hands-on introduction to GPU programming with Triton, for NVIDIA GPUs."
+readme = "README.md"
+requires-python = ">=3.12,<3.15"
+license = { text = "MIT" }
+authors = [
+    { name = "Crusoe AI", email = "devcommunity@crusoe.ai" },
+]
+dependencies = [
+    "torch==2.14.0",
+    "triton==3.8.0",
+    "numpy==2.5.3",
+    "matplotlib==3.11.2",
+    "pandas==3.0.6",
+]
+
+[project.urls]
+Homepage = "https://github.com/crusoecloud/crusoe-developer-hub/tree/main/foundations/gpu-engineering"
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+]
+
+[tool.uv]
+# A lesson track, not a library: uv builds the environment but installs nothing
+# from this directory itself.
+package = false
