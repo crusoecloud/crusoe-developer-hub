@@ -12,7 +12,19 @@ stages: [lint, test]
 
 variables:
   PYTHON_VERSION: "3.10"
+  # Security analyzers come from a group-level scan execution policy. Their rules
+  # only match a merge request pipeline when this flag is set; otherwise they fall
+  # through to `if: $CI_COMMIT_BRANCH`, which an MR pipeline never matches, and the
+  # workflow block above stops branch pipelines on everything but main -- so without
+  # this, changes are scanned only after they merge.
+  #
+  # Those analyzers also keep every pipeline non-empty, which matters: each include
+  # below scopes its jobs with `changes:`, so a change touching no registered
+  # directory yields zero jobs -- and a pipeline with no jobs is never created,
+  # leaving the merge request waiting on one that will never arrive.
+  AST_ENABLE_MR_PIPELINES: "true"
 
 # Each example self-registers by adding its own .gitlab-ci.yml; the glob picks it up.
 include:
   - local: 'examples/**/.gitlab-ci.yml'
+  - local: 'foundations/**/.gitlab-ci.yml'
