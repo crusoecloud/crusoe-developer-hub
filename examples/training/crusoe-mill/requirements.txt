@@ -1,0 +1,25 @@
+# Everything the three notebooks need, pinned to the versions the recorded runs used.
+# Verified on Python 3.12 and 3.13. Run from this directory, so the local wheels resolve:
+#
+#   python3 -m venv .venv
+#   . .venv/bin/activate
+#   pip install -r requirements.txt
+#   python -m ipykernel install --user --name crusoe-mill --display-name "Crusoe Mill"
+#
+# Then pick the "Crusoe Mill" kernel in Jupyter or VS Code.
+#
+# Pins are deliberate: an unpinned `transformers` can change tokenisation and an unpinned
+# `datasets` can change what prepare_data.py builds, either of which moves a score silently.
+
+# Crusoe's SDK, shipped as a wheel because it is not on a public index yet.
+./sdk/crusoe_mill-0.1.0.dev1-py3-none-any.whl
+
+transformers==5.5.4
+numpy==2.5.2
+matplotlib==3.11.2
+datasets==5.0.1
+jinja2==3.1.6
+
+# Jupyter itself. ipywidgets is what stops tqdm warning about IProgress on every import.
+ipykernel==7.3.0
+ipywidgets==8.1.9

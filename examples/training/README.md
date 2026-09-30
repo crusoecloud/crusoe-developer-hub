@@ -6,6 +6,7 @@ Prepare data, train or fine-tune a model, and evaluate the result. Organize exam
 | --- | --- | --- |
 | [PII redaction](pii-redaction/) | Prepare synthetic data, fine-tune a model, deploy it, and evaluate redaction against a baseline | Python environment, Crusoe Inference API key, and access to the training and deployment services used in the notebook; no local GPU |
 | [Multipart dataset upload](multipart-dataset-upload/) | Upload a multi-gigabyte training file in parallel parts with the Uploads API, poll assembly, and get a file id ready for a fine-tuning job | Python environment and a Crusoe Inference API key; no local GPU |
+| [Crusoe Mill](crusoe-mill/) | Write your own fine-tuning and RL loops against Crusoe Mill, Crusoe's Tinker-compatible training API: sampling, supervised fine-tuning on Banking77, GRPO on GSM8K, and serving a saved checkpoint | Python environment and an Intelligence API key with Crusoe Mill access; no local GPU |
 
 Each notebook contains executable code, its own helpers, and a credentials template. Follow its README to configure it and inspect the steps that launch jobs or deployments before running them. Training, inference, and deployed resources can incur charges; each README explains cleanup and validation limits.
 

@@ -1,0 +1,18 @@
+Third-party components shipped with this example
+================================================
+
+1. crusoe_mill  (sdk/crusoe_mill-*.whl)
+---------------------------------------
+Crusoe's fine-tuning SDK, shipped here because it is in limited preview and not yet on a
+public package index. Not third-party: it is ours.
+
+2. The datasets
+---------------
+No dataset is stored in this repository. `prepare_data.py` builds them from their public
+upstream sources, each pinned to a commit and verified by md5:
+
+    openai/gsm8k               @ 740312add88f781978c0658806c59bc2815b9866
+    legacy-datasets/banking77  @ f54121560de48f2852f90be299010d1d6dc612ec
+
+Both are public Hugging Face datasets and are redistributed here only as the code that
+fetches them, not as data.

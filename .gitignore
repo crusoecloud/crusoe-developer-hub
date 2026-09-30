@@ -54,3 +54,7 @@ coverage/
 **/assets/*.py
 **/assets/**/*.md
 assets/third-party/
+
+# Built by prepare_data.py from the public upstream datasets, verified by md5.
+examples/training/crusoe-mill/data/
+examples/training/crusoe-mill/.venv/
