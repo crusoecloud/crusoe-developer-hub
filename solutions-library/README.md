@@ -12,6 +12,7 @@ Browse the full library at [github.com/crusoecloud/solutions-library](https://gi
 | Serve a model on Kubernetes | [KServe example](https://github.com/crusoecloud/solutions-library/tree/main/crusoe-kserve-example) |
 | Pretrain Llama 3.1 with TorchTitan on Kubernetes | [TorchTitan PyTorchJob](https://github.com/crusoecloud/solutions-library/tree/main/torchtitan-llama3_1-kubernetes-pytorchjob) |
 | Monitor cluster resources | [Grafana on Crusoe Managed Kubernetes](https://github.com/crusoecloud/solutions-library/tree/main/grafana-cmk) |
+| Fine-tune a model with Crusoe Intelligence Foundry | [Crusoe managed fine-tuning example](https://github.com/crusoecloud/solutions-library/tree/main/crusoe-managed-finetuning-example) |
 
 Read a solution's README before applying it. Most create paid compute, storage, or networking resources, and cleanup is specific to each one. For the concepts behind these workflows, see [Foundations](../foundations/); for single-task versions, see [Examples](../examples/).
 
