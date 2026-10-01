@@ -223,6 +223,10 @@ The lesson in the sweep is that small inputs cannot saturate a GPU, because the 
 
 SiLU, `x * sigmoid(x)`, chains a negation, an exponential, an addition, a division, and a multiplication per element, compared with vector addition's single add. It also moves less memory: one load and one store instead of two loads and one store. It reaches the same bandwidth ceiling as vector addition anyway, because the extra arithmetic hides entirely behind memory latency. This is the memory-bound regime in practice, and it is why the next lesson attacks bytes rather than operations.
 
+[`v0_basic.py`](./02_silu/v0_basic.py) is the kernel and its correctness check. The body is one line of arithmetic, `y = x * tl.sigmoid(x)`, wrapped in the same program-id, offsets, mask, load, store skeleton as vector addition. The script runs sizes 1, 128, 1024, and `1024 * 1024 + 7` against `torch.nn.functional.silu`, the last one deliberately not a multiple of the 1024-element block so that the final program instance runs past the end of the array and the masking is tested.
+
+[`v1_benchmark.py`](./02_silu/v1_benchmark.py) repeats the kernel and sweeps sizes from 2^10 to 2^24 against PyTorch's SiLU with `triton.testing.do_bench`, writing the plot and table into `02_silu/results/`.
+
 ### 03. SwiGLU and kernel fusion
 
 SwiGLU, used in Llama, PaLM, and Mistral feed-forward layers, computes `silu(gate) * value` where `gate` and `value` are the two halves of the input. Written as two operations, PyTorch style, it launches two kernels and the intermediate `silu(gate)` travels to global memory and back between them.
