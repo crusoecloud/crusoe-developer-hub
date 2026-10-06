@@ -1,6 +1,6 @@
 # GPU Programming with Triton
 
-A hands-on introduction to GPU programming using [Triton](https://triton-lang.org/), the Python-embedded language and compiler for writing GPU kernels. The track starts with how a GPU executes code and how its memory is organized, because every performance decision in a kernel comes back to those two things. It then walks through a short lesson in CUDA C++ terms followed by five Triton kernels of increasing subtlety, each as a set of short programs you can run, benchmark, and modify on any NVIDIA GPU.
+A hands-on introduction to GPU programming using [Triton](https://triton-lang.org/), the Python-embedded language and compiler for writing GPU kernels. The track starts with how a GPU executes code and how its memory is organized, because every performance decision in a kernel comes back to those two things. It then walks through a short lesson in CUDA C++ terms followed by a growing set of Triton kernels of increasing subtlety, each as a set of short programs you can run, benchmark, and modify on any NVIDIA GPU.
 
 You need to be comfortable with Python and PyTorch tensors. No CUDA experience is assumed. Every script is self-contained and checks its own result against PyTorch before it reports anything.
 
@@ -188,65 +188,22 @@ Two rules apply to every benchmark in this track.
 
 **Let `do_bench` handle the clock.** Kernel launches are asynchronous, so wrapping a call in `time.time()` measures how long the CPU took to issue the launch, not how long the GPU took to run it. `triton.testing.do_bench` synchronizes the two clocks, runs warmup iterations so first-call compilation and clock ramp-up are excluded, repeats the measurement for a time budget rather than a fixed count, and flushes the L2 cache between iterations so every run reads its inputs from DRAM the way a real workload would. Throughput is then computed from bytes moved, which means counting those bytes honestly: three arrays for vector addition, two for SiLU.
 
-## Part 4: The lessons
+## Running the examples
 
-Each lesson is a small set of runnable scripts. Numbers you see will depend on your GPU, its driver, and its clock state; the relationships between them are what the lessons are about.
+Each numbered folder covers one topic, and its scripts build on each other in order:
 
-### 00. GPU basics
+- `v0_*.py` is the kernel with a correctness check against a PyTorch reference.
+- Later versions repeat the kernel and add a benchmark, an alternative implementation, or a look at what the compiler generated.
+- Benchmarks write their plot and table into a `results/` folder beside the script.
 
-No Triton. This lesson establishes the execution model in the terms CUDA uses, so the Triton lessons can refer back to them.
+Run any script from inside its folder, for example:
 
-Two CUDA C++ programs under [`00_gpu_basics/cuda/`](./00_gpu_basics/cuda/): [`01_hello_kernel.cu`](./00_gpu_basics/cuda/01_hello_kernel.cu) introduces `__global__`, the `<<<blocks, threads>>>` launch syntax, and `cudaDeviceSynchronize`; [`02_square_array.cu`](./00_gpu_basics/cuda/02_square_array.cu) introduces the two memories and the calls that move data between them. The many-block vector addition that completes the sequence lives in [`01_vector_add/cuda/vector_add.cu`](./01_vector_add/cuda/vector_add.cu), beside the Triton kernel it mirrors. Its index formula is the one every elementwise CUDA kernel uses:
+```bash
+cd 02_silu
+python v0_basic.py
+python v1_benchmark.py
+```
 
-![Twelve output elements above three blocks of four threads. The middle block's threads point at elements 4 to 7, and the formula i = blockIdx.x * blockDim.x + threadIdx.x is evaluated for block 1, thread 2, giving 6.](assets/global-index.png)
-
-Four Python scripts show the same ideas from the PyTorch side:
-
-- [`profile_add_relu.py`](./00_gpu_basics/profile_add_relu.py) prints the `torch.profiler` table for `(a + b).relu()`, which is two kernels, not one.
-
-<picture>
-  <source media="(prefers-reduced-motion: reduce)" srcset="assets/one-line-two-kernels.png">
-  <img src="assets/one-line-two-kernels.gif" alt="One line of PyTorch shown as two kernel launches. The add kernel reads a and b and writes tmp to global memory; the relu kernel reads tmp back and writes c. A tally counts two launches, two kernels and five trips through memory." width="1000">
-</picture>
-
-- [`count_kernels.py`](./00_gpu_basics/count_kernels.py) counts the kernels behind that expression in eager mode and under `torch.compile`, where the two collapse into one Triton kernel.
-- [`async_timing.py`](./00_gpu_basics/async_timing.py) shows that wall-clock time around a launch measures the CPU, not the GPU.
-- [`know_the_gpu.py`](./00_gpu_basics/know_the_gpu.py) prints your GPU's SM count, warp size, warp slots per SM, and memory sizes, then works through how many waves a launch takes on it.
-
-### 01. Vector addition
-
-The simplest possible kernel, and the one the anatomy section above dissects. [`v0_basic.py`](./01_vector_add/v0_basic.py) runs it at several sizes, including one that is not a multiple of the block size, so the mask has to do its job. [`v1_benchmark.py`](./01_vector_add/v1_benchmark.py) sweeps sizes against PyTorch's add and against a pure-Python loop. [`v2_kernel_inspection.py`](./01_vector_add/v2_kernel_inspection.py) dumps the compiler stages. [`cuda/vector_add.cu`](./01_vector_add/cuda/vector_add.cu) is the same kernel in CUDA C++ for comparison.
-
-The lesson in the sweep is that small inputs cannot saturate a GPU, because the fixed cost of a launch dominates. Past that point the kernel is bound by DRAM bandwidth, and a ten-line Triton kernel lands close to both PyTorch's tuned kernel and the hand-written CUDA C++ version, because all three are limited by the same memory system.
-
-### 02. SiLU
-
-SiLU, `x * sigmoid(x)`, chains a negation, an exponential, an addition, a division, and a multiplication per element, compared with vector addition's single add. It also moves less memory: one load and one store instead of two loads and one store. It reaches the same bandwidth ceiling as vector addition anyway, because the extra arithmetic hides entirely behind memory latency. This is the memory-bound regime in practice, and it is why the next lesson attacks bytes rather than operations.
-
-[`v0_basic.py`](./02_silu/v0_basic.py) is the kernel and its correctness check. The body is one line of arithmetic, `y = x * tl.sigmoid(x)`, wrapped in the same program-id, offsets, mask, load, store skeleton as vector addition. The script runs sizes 1, 128, 1024, and `1024 * 1024 + 7` against `torch.nn.functional.silu`, the last one deliberately not a multiple of the 1024-element block so that the final program instance runs past the end of the array and the masking is tested.
-
-[`v1_benchmark.py`](./02_silu/v1_benchmark.py) repeats the kernel and sweeps sizes from 2^10 to 2^24 against PyTorch's SiLU with `triton.testing.do_bench`, writing the plot and table into `02_silu/results/`.
-
-### 03. SwiGLU and kernel fusion
-
-SwiGLU, used in Llama, PaLM, and Mistral feed-forward layers, computes `silu(gate) * value` where `gate` and `value` are the two halves of the input. Written as two operations, PyTorch style, it launches two kernels and the intermediate `silu(gate)` travels to global memory and back between them.
-
-![Left: two kernels, silu and multiply, with five arrows between them and global memory, twenty bytes per element. Right: one fused kernel with three arrows, twelve bytes per element.](assets/fusion.png)
-
-[`v0_unfused.py`](./03_swiglu_fusion/v0_unfused.py) does exactly that: a SiLU kernel writes `temp`, a multiply kernel reads it back. Per output element the path moves five values: read `gate`, write `temp`, read `temp`, read `value`, write `out`. [`v1_fused.py`](./03_swiglu_fusion/v1_fused.py) loads `gate` and `value`, computes the activation and the product in registers, and stores once: three values. Same arithmetic, sixty percent of the traffic, and [`v2_benchmark.py`](./03_swiglu_fusion/v2_benchmark.py) shows the speedup tracking that 5:3 ratio. PyTorch's eager mode pays the same round trip as the unfused version, because each operation is its own kernel. Fusion is the reason `torch.compile` exists, and writing the fused kernel by hand is how you get it for operations the compiler does not recognize.
-
-### 04. Masking with `tl.where`
-
-Clamping a value to a range is a per-element conditional: `if x < lo: x = lo`. On a GPU, threads in a warp execute the same instruction together. If some threads take one branch and others take the other, the hardware runs both paths one after the other with the non-participating threads masked off. That is [warp divergence](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#branching-and-divergence), and for data-dependent conditions it can cost you half your throughput.
-
-`tl.where(condition, a, b)` avoids it by evaluating both candidates for every element and selecting per lane. Every thread runs the same instruction stream; the cost is that both sides are always computed, which for cheap arithmetic is far less than a divergent branch. [`v0_basic.py`](./04_masking_where/v0_basic.py) clamps with two `tl.where` calls and checks against `torch.clamp`; [`v1_benchmark.py`](./04_masking_where/v1_benchmark.py) shows it reaching the same bandwidth ceiling as the other elementwise kernels.
-
-### 05. Rotary positional embedding
-
-RoPE, used in Llama-family models to encode token position into attention queries and keys, rotates pairs of features by an angle that depends on the position `m`. In the shared-frequency layout, feature `i` pairs with feature `i + feature_dim / 2`, and both share the angle `m * omega_i`. The arithmetic is four multiplies and two adds per pair. The difficulty is entirely in addressing.
-
-![One row of eight features split into two halves, with lines pairing feature i with feature i plus four. Below it, a cos table row of four entries, showing the smaller stride of the angle table.](assets/rope-layout.png)
-
-The input `x` has `feature_dim` elements per row, so program `m` reads its row starting at `m * feature_dim`. The precomputed `cos` and `sin` tables have `feature_dim / 2` elements per row, so the same program reads its angles starting at `m * feature_dim / 2`. One program handles one sequence position, loads both halves of `x` and the matching angle row with three different offset expressions, and stores both rotated halves. Getting those offsets right is the whole kernel; this is the pattern for any operation whose tensors do not share a layout. [`v1_benchmark.py`](./05_rope/v1_benchmark.py) compares it against a chunk-and-cat PyTorch reference, which is slower because it materializes intermediate tensors that the fused kernel never writes.
+The numbers you see will depend on your GPU, its driver, and its clock state; the relationships between them are what each example is about. A folder that has a `cuda/` directory also carries CUDA C++ versions for comparison, which build with `make` there.
 
 [All foundations](../README.md)
