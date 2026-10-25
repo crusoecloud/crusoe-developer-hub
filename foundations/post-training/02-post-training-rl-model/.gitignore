@@ -1,0 +1,22 @@
+# Any hidden directory: virtual environments, editor and tool state, caches,
+# notebook checkpoints, local build scaffolding. None of it belongs in the repo.
+.*/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Downloaded weights (cached by huggingface_hub outside the repo, but guard
+# against copies landing here)
+*.safetensors
+*.pth
+*.bin
+
+# Evaluation logs and training artifacts
+outputs/
+checkpoints/
+*.jsonl
+
+# OS / editor noise
+.DS_Store

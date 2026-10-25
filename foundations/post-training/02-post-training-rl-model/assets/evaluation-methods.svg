@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 360" width="980" height="360" font-family="'Roboto Mono','Menlo','Courier New',monospace" font-size="13">
+  <style>
+    .box { stroke: #000; stroke-width: 2; }
+    .t { fill: #000; }
+    .tw { fill: #fff; }
+    .small { font-size: 12px; }
+    .tiny { font-size: 11px; fill: #000; }
+    .label { font-size: 12px; fill: #395761; }
+    .arrow { stroke: #000; stroke-width: 2; fill: none; marker-end: url(#head); }
+  </style>
+  <defs>
+    <marker id="head" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#000"/>
+    </marker>
+  </defs>
+
+  <!-- panel 1: multiple choice -->
+  <rect x="30" y="40" width="200" height="250" class="box" fill="#C3D6E7"/>
+  <text x="130" y="66" text-anchor="middle" class="t">Multiple choice</text>
+  <rect x="48" y="84" width="164" height="76" class="box" fill="#fff"/>
+  <text x="58" y="104" class="tiny">A) 5/2    B) 7/2</text>
+  <text x="58" y="124" class="tiny">C) 3      D) 7</text>
+  <text x="58" y="148" class="tiny">model picks: B</text>
+  <path d="M130,160 L130,186" class="arrow"/>
+  <rect x="48" y="188" width="164" height="36" class="box" fill="#fff"/>
+  <text x="130" y="211" text-anchor="middle" class="tiny">key says: B</text>
+  <text x="130" y="250" text-anchor="middle" class="label">exact match</text>
+  <text x="130" y="272" text-anchor="middle" class="label">needs options</text>
+
+  <!-- panel 2: verifier (highlighted) -->
+  <rect x="270" y="40" width="200" height="250" class="box" fill="#CEEB13"/>
+  <text x="370" y="66" text-anchor="middle" class="t">Verifier</text>
+  <rect x="288" y="84" width="164" height="76" class="box" fill="#fff"/>
+  <text x="298" y="104" class="tiny">free-form answer:</text>
+  <text x="298" y="124" class="tiny">"...so the sum is</text>
+  <text x="298" y="144" class="tiny"> \boxed{\dfrac{7}{2}}"</text>
+  <path d="M370,160 L370,186" class="arrow"/>
+  <rect x="288" y="188" width="164" height="36" class="box" fill="#fff"/>
+  <text x="370" y="211" text-anchor="middle" class="tiny">program: 7/2 == 7/2</text>
+  <text x="370" y="250" text-anchor="middle" class="label">deterministic check</text>
+  <text x="370" y="272" text-anchor="middle" class="label">needs checkable answers</text>
+
+  <!-- panel 3: leaderboard -->
+  <rect x="510" y="40" width="200" height="250" class="box" fill="#C3D6E7"/>
+  <text x="610" y="66" text-anchor="middle" class="t">Leaderboard</text>
+  <rect x="528" y="84" width="76" height="76" class="box" fill="#fff"/>
+  <text x="566" y="112" text-anchor="middle" class="tiny">model A</text>
+  <text x="566" y="132" text-anchor="middle" class="tiny">answer</text>
+  <rect x="616" y="84" width="76" height="76" class="box" fill="#fff"/>
+  <text x="654" y="112" text-anchor="middle" class="tiny">model B</text>
+  <text x="654" y="132" text-anchor="middle" class="tiny">answer</text>
+  <path d="M610,160 L610,186" class="arrow"/>
+  <rect x="528" y="188" width="164" height="36" class="box" fill="#fff"/>
+  <text x="610" y="211" text-anchor="middle" class="tiny">people vote: A wins</text>
+  <text x="610" y="250" text-anchor="middle" class="label">human preference</text>
+  <text x="610" y="272" text-anchor="middle" class="label">needs a crowd</text>
+
+  <!-- panel 4: LLM judge -->
+  <rect x="750" y="40" width="200" height="250" class="box" fill="#C3D6E7"/>
+  <text x="850" y="66" text-anchor="middle" class="t">LLM judge</text>
+  <rect x="768" y="84" width="164" height="76" class="box" fill="#fff"/>
+  <text x="778" y="104" class="tiny">free-form answer</text>
+  <text x="778" y="124" class="tiny">plus a rubric, sent to</text>
+  <text x="778" y="144" class="tiny">a stronger model</text>
+  <path d="M850,160 L850,186" class="arrow"/>
+  <rect x="768" y="188" width="164" height="36" class="box" fill="#395761"/>
+  <text x="850" y="211" text-anchor="middle" class="tw small">judge: 8 / 10</text>
+  <text x="850" y="250" text-anchor="middle" class="label">flexible, subjective</text>
+  <text x="850" y="272" text-anchor="middle" class="label">needs a model you trust</text>
+
+  <text x="490" y="326" text-anchor="middle" class="label">this track uses verifiers: the same check that scores a benchmark is the reward signal in reinforcement learning</text>
+</svg>

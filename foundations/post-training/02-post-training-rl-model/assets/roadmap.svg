@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1220 340" width="1220" height="340" font-family="'Roboto Mono','Menlo','Courier New',monospace" font-size="14">
+  <style>
+    .box { stroke: #000; stroke-width: 2; }
+    .t { fill: #000; }
+    .tw { fill: #fff; }
+    .small { font-size: 12px; }
+    .label { font-size: 12px; fill: #395761; }
+    .arrow { stroke: #000; stroke-width: 2; fill: none; marker-end: url(#head); }
+    .dash { stroke: #395761; stroke-width: 2; fill: none; stroke-dasharray: 6 5; marker-end: url(#headteal); }
+  </style>
+  <defs>
+    <marker id="head" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#000"/>
+    </marker>
+    <marker id="headteal" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#395761"/>
+    </marker>
+  </defs>
+
+  <!-- stage 1 -->
+  <text x="130" y="46" text-anchor="middle" class="label">start here</text>
+  <rect x="30" y="60" width="200" height="54" class="box" fill="#C3D6E7"/>
+  <circle cx="54" cy="87" r="12" fill="#000"/><text x="54" y="92" text-anchor="middle" class="tw small">1</text>
+  <text x="138" y="92" text-anchor="middle" class="t">Pretrained LLM</text>
+  <rect x="30" y="134" width="200" height="40" class="box" fill="#fff"/>
+  <text x="130" y="159" text-anchor="middle" class="t small">tokens, logits, decoding</text>
+  <rect x="30" y="184" width="200" height="40" class="box" fill="#fff"/>
+  <text x="130" y="209" text-anchor="middle" class="t small">KV cache, compilation</text>
+
+  <!-- stage 2 -->
+  <text x="370" y="46" text-anchor="middle" class="label">measure</text>
+  <rect x="270" y="60" width="200" height="54" class="box" fill="#CEEB13"/>
+  <circle cx="294" cy="87" r="12" fill="#000"/><text x="294" y="92" text-anchor="middle" class="tw small">2</text>
+  <text x="378" y="92" text-anchor="middle" class="t">Evaluation</text>
+  <rect x="270" y="134" width="200" height="40" class="box" fill="#fff"/>
+  <text x="370" y="159" text-anchor="middle" class="t small">math verifier</text>
+  <rect x="270" y="184" width="200" height="40" class="box" fill="#fff"/>
+  <text x="370" y="209" text-anchor="middle" class="t small">benchmark accuracy</text>
+
+  <!-- stage 3 -->
+  <text x="610" y="46" text-anchor="middle" class="label">no training needed</text>
+  <rect x="510" y="60" width="200" height="54" class="box" fill="#99AE88"/>
+  <circle cx="534" cy="87" r="12" fill="#000"/><text x="534" y="92" text-anchor="middle" class="tw small">3</text>
+  <text x="618" y="92" text-anchor="middle" class="t">Inference-time</text>
+  <rect x="510" y="134" width="200" height="40" class="box" fill="#fff"/>
+  <text x="610" y="159" text-anchor="middle" class="t small">sampling and voting</text>
+  <rect x="510" y="184" width="200" height="40" class="box" fill="#fff"/>
+  <text x="610" y="209" text-anchor="middle" class="t small">self-refinement</text>
+
+  <!-- stage 4 -->
+  <text x="850" y="46" text-anchor="middle" class="label">weights change</text>
+  <rect x="750" y="60" width="200" height="54" class="box" fill="#7799B6"/>
+  <circle cx="774" cy="87" r="12" fill="#000"/><text x="774" y="92" text-anchor="middle" class="tw small">4</text>
+  <text x="858" y="92" text-anchor="middle" class="t">Training</text>
+  <rect x="750" y="134" width="200" height="40" class="box" fill="#fff"/>
+  <text x="850" y="159" text-anchor="middle" class="t small">RL with verifiable rewards</text>
+  <rect x="750" y="184" width="200" height="40" class="box" fill="#fff"/>
+  <text x="850" y="209" text-anchor="middle" class="t small">distillation</text>
+
+  <!-- stage 5 -->
+  <text x="1090" y="46" text-anchor="middle" class="label">same loop, at scale</text>
+  <rect x="990" y="60" width="200" height="54" class="box" fill="#ECAC45"/>
+  <circle cx="1014" cy="87" r="12" fill="#000"/><text x="1014" y="92" text-anchor="middle" class="tw small">5</text>
+  <text x="1098" y="92" text-anchor="middle" class="t">Managed RL</text>
+  <rect x="990" y="134" width="200" height="40" class="box" fill="#fff"/>
+  <text x="1090" y="159" text-anchor="middle" class="t small">Tinker-compatible API</text>
+  <rect x="990" y="184" width="200" height="40" class="box" fill="#fff"/>
+  <text x="1090" y="209" text-anchor="middle" class="t small">no cluster to operate</text>
+
+  <!-- arrows between stages -->
+  <path d="M230,87 L268,87" class="arrow"/>
+  <path d="M470,87 L508,87" class="arrow"/>
+  <path d="M710,87 L748,87" class="arrow"/>
+  <path d="M950,87 L988,87" class="arrow"/>
+
+  <!-- loop back to evaluation -->
+  <path d="M610,224 L610,262 L370,262 L370,228" class="dash"/>
+  <path d="M850,224 L850,282 L370,282 L370,228" class="dash"/>
+  <path d="M1090,224 L1090,302 L370,302 L370,228" class="dash"/>
+  <text x="610" y="330" text-anchor="middle" class="label">every method in stages 3, 4 and 5 is judged by the evaluator from stage 2</text>
+</svg>

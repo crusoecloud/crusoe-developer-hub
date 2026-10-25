@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 330" width="980" height="330" font-family="'Roboto Mono','Menlo','Courier New',monospace" font-size="13">
+  <style>
+    .box { stroke: #000; stroke-width: 2; }
+    .cell { stroke: #000; stroke-width: 1.5; fill: #fff; }
+    .t { fill: #000; }
+    .small { font-size: 12px; }
+    .tiny { font-size: 10px; fill: #000; }
+    .label { font-size: 12px; fill: #395761; }
+    .arrow { stroke: #000; stroke-width: 2; fill: none; marker-end: url(#head); }
+  </style>
+  <defs>
+    <marker id="head" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#000"/>
+    </marker>
+  </defs>
+
+  <text x="30" y="34" class="label">logits: one row per input token, one column per vocabulary entry, shape (5, 151936)</text>
+
+  <!-- matrix: 5 rows x 7 shown columns, cell 44 x 26, origin (100, 70) -->
+  <g transform="translate(100,70)">
+    <text x="22" y="-6" text-anchor="middle" class="tiny">col 0</text>
+    <text x="66" y="-6" text-anchor="middle" class="tiny">1</text>
+    <text x="110" y="-6" text-anchor="middle" class="tiny">2</text>
+    <text x="154" y="-6" text-anchor="middle" class="tiny">...</text>
+    <text x="198" y="-6" text-anchor="middle" class="tiny">id</text>
+    <text x="242" y="-6" text-anchor="middle" class="tiny">...</text>
+    <text x="286" y="-6" text-anchor="middle" class="tiny">151935</text>
+
+    <text x="-10" y="17" text-anchor="end" class="tiny">Photos</text>
+    <text x="-10" y="43" text-anchor="end" class="tiny">ynthesis</text>
+    <text x="-10" y="69" text-anchor="end" class="tiny">converts</text>
+    <text x="-10" y="95" text-anchor="end" class="tiny">sunlight</text>
+    <text x="-10" y="121" text-anchor="end" class="tiny">into</text>
+
+    <rect x="0" y="0" width="308" height="104" class="cell"/>
+    <path d="M44,0 V104 M88,0 V104 M132,0 V104 M176,0 V104 M220,0 V104 M264,0 V104" stroke="#000" stroke-width="1.5"/>
+    <path d="M0,26 H308 M0,52 H308 M0,78 H308" stroke="#000" stroke-width="1.5"/>
+
+    <rect x="0" y="104" width="308" height="26" class="cell" fill="#ECAC45"/>
+    <path d="M44,104 V130 M88,104 V130 M132,104 V130 M176,104 V130 M220,104 V130 M264,104 V130" stroke="#000" stroke-width="1.5"/>
+    <text x="22" y="122" text-anchor="middle" class="tiny">low</text>
+    <text x="66" y="122" text-anchor="middle" class="tiny">low</text>
+    <text x="110" y="122" text-anchor="middle" class="tiny">low</text>
+    <text x="154" y="122" text-anchor="middle" class="tiny">...</text>
+    <rect x="176" y="104" width="44" height="26" fill="#CEEB13" stroke="#000" stroke-width="1.5"/>
+    <text x="198" y="122" text-anchor="middle" class="tiny">max</text>
+    <text x="242" y="122" text-anchor="middle" class="tiny">...</text>
+    <text x="286" y="122" text-anchor="middle" class="tiny">low</text>
+
+    <text x="154" y="158" text-anchor="middle" class="label">only the last row matters: it scores the token after "into"</text>
+  </g>
+
+  <!-- arrows (68 px long) and boxes, all centered on y = 153 -->
+  <path d="M418,153 L486,153" class="arrow"/>
+  <text x="452" y="140" text-anchor="middle" class="label">[-1]</text>
+  <rect x="488" y="128" width="120" height="50" class="box" fill="#C3D6E7"/>
+  <text x="548" y="149" text-anchor="middle" class="t small">row vector</text>
+  <text x="548" y="167" text-anchor="middle" class="t small">151936 scores</text>
+
+  <path d="M608,153 L676,153" class="arrow"/>
+  <text x="642" y="140" text-anchor="middle" class="label">argmax</text>
+  <rect x="678" y="128" width="100" height="50" class="box" fill="#C3D6E7"/>
+  <text x="728" y="149" text-anchor="middle" class="t small">column</text>
+  <text x="728" y="167" text-anchor="middle" class="t small">index</text>
+
+  <path d="M778,153 L846,153" class="arrow"/>
+  <text x="812" y="140" text-anchor="middle" class="label">decode</text>
+  <rect x="848" y="128" width="120" height="50" class="box" fill="#CEEB13"/>
+  <text x="908" y="149" text-anchor="middle" class="t small">token</text>
+  <text x="908" y="167" text-anchor="middle" class="t">" chemical"</text>
+
+  <text x="640" y="250" text-anchor="middle" class="label">a column index is a token id, and the tokenizer turns an id back into text</text>
+  <text x="640" y="272" text-anchor="middle" class="label">always taking the largest score is greedy decoding</text>
+</svg>

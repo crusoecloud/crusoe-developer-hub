@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 370" width="980" height="370" font-family="'Roboto Mono','Menlo','Courier New',monospace" font-size="13">
+  <style>
+    .box { stroke: #000; stroke-width: 2; }
+    .t { fill: #000; }
+    .tw { fill: #fff; }
+    .small { font-size: 12px; }
+    .label { font-size: 12px; fill: #395761; }
+    .arrow { stroke: #000; stroke-width: 2; fill: none; marker-end: url(#head); }
+  </style>
+  <defs>
+    <marker id="head" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#000"/>
+    </marker>
+  </defs>
+
+  <!-- shared prompt -->
+  <rect x="30" y="40" width="310" height="110" class="box" fill="#C3D6E7"/>
+  <text x="46" y="64" class="label">prompt</text>
+  <text x="46" y="88" class="t small">Maya has 24 stickers. She gives a</text>
+  <text x="46" y="108" class="t small">third to her brother, then buys 7</text>
+  <text x="46" y="128" class="t small">more. How many does she have now?</text>
+
+  <!-- top path: conventional -->
+  <path d="M340,70 L398,70" class="arrow"/>
+  <rect x="400" y="44" width="150" height="52" class="box" fill="#395761"/>
+  <text x="475" y="66" text-anchor="middle" class="tw small">conventional</text>
+  <text x="475" y="84" text-anchor="middle" class="tw small">LLM</text>
+  <path d="M550,70 L618,70" class="arrow"/>
+  <rect x="620" y="44" width="330" height="52" class="box" fill="#fff"/>
+  <text x="785" y="75" text-anchor="middle" class="t">Answer: 16</text>
+  <text x="785" y="118" text-anchor="middle" class="label">one jump, and it dropped the "buys 7 more" step</text>
+
+  <!-- bottom path: reasoning -->
+  <path d="M340,125 L370,125 L370,240 L398,240" class="arrow"/>
+  <rect x="400" y="214" width="150" height="52" class="box" fill="#395761"/>
+  <text x="475" y="236" text-anchor="middle" class="tw small">reasoning</text>
+  <text x="475" y="254" text-anchor="middle" class="tw small">LLM</text>
+  <path d="M550,240 L618,240" class="arrow"/>
+
+  <rect x="620" y="160" width="330" height="190" class="box" fill="#fff"/>
+  <rect x="632" y="172" width="306" height="118" class="box" fill="#CEEB13"/>
+  <text x="644" y="192" class="label">&lt;think&gt;</text>
+  <text x="644" y="214" class="t small">1. a third of 24 is 8</text>
+  <text x="644" y="234" class="t small">2. 24 - 8 = 16 left</text>
+  <text x="644" y="254" class="t small">3. 16 + 7 = 23</text>
+  <text x="644" y="278" class="label">&lt;/think&gt;</text>
+  <text x="785" y="326" text-anchor="middle" class="t">Answer: 23</text>
+
+  <text x="475" y="306" text-anchor="middle" class="label">the steps are generated</text>
+  <text x="475" y="324" text-anchor="middle" class="label">tokens, like the answer</text>
+</svg>

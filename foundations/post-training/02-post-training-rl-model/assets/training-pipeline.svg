@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 400" width="980" height="400" font-family="'Roboto Mono','Menlo','Courier New',monospace" font-size="14">
+  <style>
+    .box { stroke: #000; stroke-width: 2; }
+    .t { fill: #000; }
+    .small { font-size: 12px; }
+    .label { font-size: 12px; fill: #395761; }
+    .arrow { stroke: #000; stroke-width: 2; fill: none; marker-end: url(#head); }
+    .bracket { stroke: #000; stroke-width: 2; fill: none; }
+  </style>
+  <defs>
+    <marker id="head" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#000"/>
+    </marker>
+  </defs>
+
+  <text x="30" y="36" class="label">How a conventional LLM is made</text>
+
+  <!-- random init -->
+  <rect x="30" y="60" width="170" height="70" class="box" fill="#E4E2E0"/>
+  <text x="115" y="90" text-anchor="middle" class="t">Random weights</text>
+  <text x="115" y="112" text-anchor="middle" class="t small">knows nothing</text>
+
+  <path d="M200,95 L238,95" class="arrow"/>
+
+  <!-- pretraining -->
+  <rect x="240" y="60" width="230" height="70" class="box" fill="#99AE88"/>
+  <text x="355" y="84" text-anchor="middle" class="t">Pretraining</text>
+  <text x="355" y="104" text-anchor="middle" class="t small">predict the next token</text>
+  <text x="355" y="120" text-anchor="middle" class="t small">on trillions of tokens</text>
+
+  <path d="M470,95 L508,95" class="arrow"/>
+
+  <!-- post-training -->
+  <rect x="510" y="48" width="440" height="94" class="box" fill="#C3D6E7"/>
+  <text x="730" y="70" text-anchor="middle" class="t">Post-training</text>
+  <rect x="530" y="82" width="190" height="46" class="box" fill="#ECAC45"/>
+  <text x="625" y="101" text-anchor="middle" class="t small">Instruction tuning</text>
+  <text x="625" y="118" text-anchor="middle" class="t small">follow requests</text>
+  <rect x="740" y="82" width="190" height="46" class="box" fill="#ECAC45"/>
+  <text x="835" y="101" text-anchor="middle" class="t small">Preference tuning</text>
+  <text x="835" y="118" text-anchor="middle" class="t small">answer the way people like</text>
+
+  <!-- output labels -->
+  <text x="355" y="160" text-anchor="middle" class="label">result: a base model</text>
+  <text x="730" y="160" text-anchor="middle" class="label">result: an assistant</text>
+
+  <!-- bracket down -->
+  <path d="M355,172 L355,200 L730,200 L730,172" class="bracket"/>
+  <path d="M542,200 L542,232" class="arrow"/>
+
+  <text x="542" y="256" text-anchor="middle" class="label">reasoning methods sit on top of either one</text>
+
+  <!-- three routes -->
+  <rect x="100" y="276" width="260" height="96" class="box" fill="#C3D6E7"/>
+  <circle cx="124" cy="300" r="12" fill="#000"/><text x="124" y="305" text-anchor="middle" fill="#fff" class="small">1</text>
+  <text x="246" y="305" text-anchor="middle" class="t">Inference-time scaling</text>
+  <text x="230" y="330" text-anchor="middle" class="t small">spend more compute per answer</text>
+  <text x="230" y="350" text-anchor="middle" class="t small">weights unchanged</text>
+
+  <rect x="412" y="276" width="260" height="96" class="box" fill="#CEEB13"/>
+  <circle cx="436" cy="300" r="12" fill="#000"/><text x="436" y="305" text-anchor="middle" fill="#fff" class="small">2</text>
+  <text x="558" y="305" text-anchor="middle" class="t">Reinforcement learning</text>
+  <text x="542" y="330" text-anchor="middle" class="t small">try, get a reward, update weights</text>
+  <text x="542" y="350" text-anchor="middle" class="t small">rewards come from a verifier</text>
+
+  <rect x="724" y="276" width="226" height="96" class="box" fill="#C3D6E7"/>
+  <circle cx="748" cy="300" r="12" fill="#000"/><text x="748" y="305" text-anchor="middle" fill="#fff" class="small">3</text>
+  <text x="853" y="305" text-anchor="middle" class="t">Distillation</text>
+  <text x="837" y="330" text-anchor="middle" class="t small">imitate a stronger model's</text>
+  <text x="837" y="350" text-anchor="middle" class="t small">reasoning traces</text>
+</svg>

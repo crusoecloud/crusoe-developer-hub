@@ -1,15 +1,27 @@
 # Post-training Foundations
 
-Understand quantization, LoRA, and QLoRA by implementing the core ideas in PyTorch, then using `transformers`, `peft`, and `bitsandbytes` to fine-tune a model. These notebooks teach the mechanics of post-training through runnable exercises.
+Two tracks on what happens to a model after pretraining. The first teaches the mechanics that make fine-tuning cheap: quantization, LoRA, and QLoRA, implemented in PyTorch and then run with `transformers`, `peft`, and `bitsandbytes`. The second, *Post-Training with RL: From Scratch to Managed RL*, teaches a model to reason: text generation, a math verifier, inference-time scaling, reinforcement learning with GRPO on one GPU, and the same loop on a managed RL service.
 
-## Start here
+Each track has its own environment and README. They do not share a virtual environment.
+
+## 01: Quantization, LoRA, and QLoRA
 
 | Lesson | What it covers |
 |---|---|
 | [Quantization](./01-into-lora-fine-tuning/01_quantization.ipynb) | Numeric precision, quantization and dequantization, granularity, NF4, and loading a model in 4 bit |
 | [LoRA and QLoRA](./01-into-lora-fine-tuning/02_lora_and_qlora.ipynb) | A LoRA layer built from scratch, its effect on a pretrained model, and a QLoRA fine-tune using standard libraries |
 
-Work through them in order. See the [lesson README](./01-into-lora-fine-tuning/) for details and further reading.
+Work through them in order. See the [lesson README](./01-into-lora-fine-tuning/) for details and further reading. The setup instructions below are for this track.
+
+## 02: Post-Training with RL, from scratch to managed RL
+
+| Notebook | What it covers |
+|---|---|
+| [What is a reasoning model?](./02-post-training-rl-model/01_ReasoningModels.ipynb) | The vocabulary, the conventional training pipeline, three routes to better reasoning, and a base model against a reasoning model on the same questions |
+| [Text generation from scratch](./02-post-training-rl-model/02_TextGeneration.ipynb) | Tokenizer, one forward pass, the greedy decoding loop, a KV cache, and the one-line `torch.compile` speedup |
+| [Evaluating reasoning with a math verifier](./02-post-training-rl-model/03_MathVerifier.ipynb) | The four evaluation methods, a four-stage verifier, a MATH-500 harness, and a prompt-sensitivity experiment |
+
+More notebooks follow the track's roadmap: sampling and self-consistency, self-refinement, GRPO, distillation, and the same RL loop on a managed service. See the [track README](./02-post-training-rl-model/) for its own `uv` setup, which takes one command.
 
 To apply the ideas to a specific task, continue to the [PII redaction example](../../examples/training/pii-redaction/). That walkthrough prepares data, runs managed fine-tuning, deploys the model, and evaluates it. It has its own setup and credentials instructions.
 
