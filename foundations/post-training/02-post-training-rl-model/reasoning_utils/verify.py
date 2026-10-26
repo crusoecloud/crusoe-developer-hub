@@ -1,8 +1,8 @@
 """A math verifier: pull the final answer out of free-form text and check it against a reference.
 
-Lesson 03 builds this pipeline one function at a time. Later lessons import
-it: a verifier that says "correct" or "incorrect" is exactly the reward
-signal reinforcement learning needs.
+The math verifier notebook walks through this pipeline one stage at a time.
+Later notebooks import it: a verifier that says "correct" or "incorrect" is
+exactly the reward signal reinforcement learning needs.
 
     text  --extract-->  candidate  --normalize-->  canonical string  --compare-->  True / False
 """
@@ -67,6 +67,30 @@ LATEX_REWRITES = [
 ]
 
 
+FRAC_BRACED = re.compile(r"\\frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}")
+FRAC_BARE = re.compile(r"\\frac\s+([^\s{}\\]+)\s+([^\s{}\\]+)")
+SQRT_BRACED = re.compile(r"\\sqrt\s*\{([^{}]*)\}")
+SQRT_BARE = re.compile(r"\\sqrt\s+([^\\\s{}]+)")
+
+
+def _rewrite_fractions_and_roots(text: str) -> str:
+    r"""\frac{a}{b} -> (a)/(b) and \sqrt{x} -> sqrt(x), innermost first.
+
+    The patterns only match brace groups with no braces inside, so each pass
+    rewrites the innermost fractions and roots and turns their braces into
+    parentheses. Repeating until nothing changes resolves any nesting depth:
+    \frac{\frac{1}{2}}{3} becomes ((1)/(2))/(3) in two passes.
+    """
+    while True:
+        new = FRAC_BRACED.sub(r"(\1)/(\2)", text)
+        new = SQRT_BRACED.sub(r"sqrt(\1)", new)
+        new = FRAC_BARE.sub(r"(\1)/(\2)", new)
+        new = SQRT_BARE.sub(r"sqrt(\1)", new)
+        if new == text:
+            return new
+        text = new
+
+
 def normalize_answer(text: str) -> str:
     """Rewrite the many ways of printing a value into one plain, lower-case form that SymPy can parse."""
     if not text:
@@ -92,10 +116,7 @@ def normalize_answer(text: str) -> str:
     text = text.translate(SUPERSCRIPTS)
 
     text = text.replace("\\%", "").replace("%", "").replace("$", "")
-    text = re.sub(r"\\sqrt\s*\{([^}]*)\}", r"sqrt(\1)", text)
-    text = re.sub(r"\\sqrt\s+([^\\\s{}]+)", r"sqrt(\1)", text)
-    text = re.sub(r"\\frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}", r"(\1)/(\2)", text)
-    text = re.sub(r"\\frac\s+([^\s{}]+)\s+([^\s{}]+)", r"(\1)/(\2)", text)
+    text = _rewrite_fractions_and_roots(text)
     text = text.replace("^", "**")
     text = re.sub(r"(?<=\d)\s+(\d+/\d+)", r"+\1", text)  # mixed number: "1 1/2" -> "1+1/2"
     text = re.sub(r"(?<=\d),(?=\d{3}(\D|$))", "", text)  # thousands separator: "1,234" -> "1234"

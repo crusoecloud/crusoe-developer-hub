@@ -1,8 +1,8 @@
-"""Thin utilities for the reasoning-from-scratch lessons.
+"""Thin utilities for the post-training with RL track.
 
 Everything here is either infrastructure (the transformer, the tokenizer,
-downloads) or a function that an earlier lesson built step by step and a
-later lesson wants to import rather than re-derive.
+downloads) or a function that an earlier notebook built step by step and a
+later notebook wants to import rather than re-derive.
 """
 
 

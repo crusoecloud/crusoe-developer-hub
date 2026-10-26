@@ -66,6 +66,28 @@ def test_normalize_answer_examples():
     assert normalize_answer("<|im_end|>5") == "5"
 
 
+def test_normalize_answer_nested_fractions_and_roots():
+    assert normalize_answer(r"\frac{\frac{1}{2}}{3}") == "((1)/(2))/(3)"
+    assert normalize_answer(r"\sqrt{\frac{1}{4}}") == "sqrt((1)/(4))"
+    assert normalize_answer(r"\frac{1}{\sqrt{2}}") == "(1)/(sqrt(2))"
+    assert normalize_answer(r"\frac{\sqrt{\frac{9}{4}}}{3}") == "(sqrt((9)/(4)))/(3)"
+    assert normalize_answer(r"\frac 1 2") == "(1)/(2)"
+    assert normalize_answer(r"\sqrt 2") == "sqrt(2)"
+
+
+@pytest.mark.parametrize(
+    "prediction,truth",
+    [
+        (r"\frac{\frac{1}{2}}{3}", "1/6"),
+        (r"\sqrt{\frac{1}{4}}", "1/2"),
+        (r"\frac{1}{\sqrt{2}}", r"\frac{\sqrt{2}}{2}"),
+        (r"\dfrac{\sqrt{\frac{9}{4}}}{3}", "0.5"),
+    ],
+)
+def test_grade_handles_nested_latex(prediction, truth):
+    assert grade(prediction, truth) is True
+
+
 def test_split_parts():
     assert split_parts("(14/3, 2/3)") == ["14/3", "2/3"]
     assert split_parts("[a,b]") == ["a", "b"]

@@ -1,7 +1,8 @@
 """Run a model over a set of math problems and report accuracy.
 
-Built in lesson 03. Every later lesson calls this to answer the only question
-that matters: did the change make the model solve more problems?
+Introduced in the math verifier notebook. Every later notebook calls this to
+answer the only question that matters: did the change make the model solve
+more problems?
 """
 
 from __future__ import annotations
@@ -41,7 +42,8 @@ def evaluate_math(
     n_correct = 0
     total_tokens = 0
     start = time.time()
-    log = open(log_path, "w", encoding="utf-8") if log_path else None
+    if log_path:
+        Path(log_path).write_text("", encoding="utf-8")  # start a fresh log; records are appended below
 
     for i, row in enumerate(problems, start=1):
         prompt = render_math_prompt(row["problem"], template)
@@ -64,8 +66,10 @@ def evaluate_math(
             "tokens": n_tokens,
         }
         records.append(record)
-        if log:
-            log.write(json.dumps(record, ensure_ascii=False) + "\n")
+        if log_path:
+            # Open per record so an exception anywhere in the loop never leaves a handle dangling.
+            with open(log_path, "a", encoding="utf-8") as log_file:
+                log_file.write(json.dumps(record, ensure_ascii=False) + "\n")
 
         elapsed = time.time() - start
         eta = elapsed / i * (len(problems) - i)
@@ -77,8 +81,6 @@ def evaluate_math(
         else:
             print(status.ljust(90), end="\r", flush=True)
 
-    if log:
-        log.close()
     seconds = time.time() - start
     n = len(problems)
     summary = {

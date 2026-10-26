@@ -1,8 +1,8 @@
 """Greedy, KV-cached text generation.
 
-Lesson 02 builds these two functions step by step. Later lessons import them
-from here so they can focus on what sits on top: sampling, voting,
-self-refinement, and reinforcement learning.
+The text generation notebook builds these two functions step by step. Later
+notebooks import them from here so they can focus on what sits on top:
+sampling, voting, self-refinement, and reinforcement learning.
 """
 
 from __future__ import annotations
