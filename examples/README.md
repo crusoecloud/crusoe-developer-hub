@@ -8,7 +8,7 @@ Build toward a concrete outcome. Examples are organized by developer task, with 
 | Prepare data, train, fine-tune, or evaluate models | [Training](training/) | [PII redaction notebook](training/pii-redaction/) and [multipart dataset upload notebook](training/multipart-dataset-upload/) |
 | Call models or build a serving workflow | [Inference](inference/) | [MLPerf Inference v6.1 on AMD MI355X](inference/mlperf-inference-amd-mi355x-v6.1/); related integrations and serving solutions linked |
 | Follow an end-to-end event session | [Workshop](workshop/) | Planned content |
-| Apply a focused recipe | [Cookbooks](cookbooks/) | Planned content; related integration recipes linked |
+| Apply a focused recipe | [Cookbooks](cookbooks/) | [Managed MLflow](cookbooks/managed-mlflow/) |
 
 Start with the selected entry's README, then run its commands from the specified directory. Dependencies, credentials, hardware, model access, and costs vary; there is no common installation for all examples.
 

@@ -1,0 +1,28 @@
+[project]
+name = "managed-mlflow-examples"
+version = "0.1.0"
+description = "Crusoe Managed MLflow examples: tracing, evaluation and prompts."
+readme = "README.md"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+    "mlflow>=3.16",
+    "openai>=1.0",
+    "python-dotenv>=1.0",
+    # MLflow's LLM judges reach Crusoe Managed Inference through LiteLLM's `crusoe/` provider.
+    "litellm>=1.102",
+    # LangChain chat model for Crusoe Managed Inference (02_tracing_langchain.py).
+    "langchain-crusoe>=0.2",
+]
+
+[project.urls]
+Homepage = "https://github.com/crusoecloud/crusoe-developer-hub"
+
+[tool.uv]
+# A set of examples, not a library: uv builds the environment but installs
+# nothing from this directory itself.
+package = false
+# litellm pins filelock<4.0, which has open CVEs; filelock 4.x is API-compatible for its use.
+override-dependencies = ["filelock>=4.2.1"]
+
+[tool.ruff]
+line-length = 120

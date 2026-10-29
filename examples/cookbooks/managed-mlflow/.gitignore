@@ -1,0 +1,11 @@
+# Local secrets and editor state
+.env
+.claude/
+
+# Local environment and caches
+.venv/
+.ruff_cache/
+__pycache__/
+
+# MLflow local fallback store
+mlruns/
