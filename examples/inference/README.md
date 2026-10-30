@@ -5,6 +5,7 @@ Call a model or build a model-serving workflow: chat, streaming, tool calling, s
 | <div align="center">Example</div> | <div align="center">Outcome</div> | <div align="center">Requirements</div> |
 | --- | --- | --- |
 | [MLPerf Inference v6.1 on AMD MI355X](mlperf-inference-amd-mi355x-v6.1/) | Reproduce Crusoe's MLPerf Inference v6.1 submissions for gpt-oss-120b and DeepSeek-R1 at up to 512-GPU (64-node) scale on Crusoe Managed Kubernetes, and validate the results with the official submission checker | Crusoe Managed Kubernetes cluster with MI355X nodes, `kubectl` and `helm`, a container registry, and a Hugging Face token for gated models |
+| [AI Infrastructure SimCity](ai-infrastructure-simcity/) | Site and simulate AI data centers in a Next.js app whose research, planning, and advisory agents call Crusoe managed inference (Kimi, GLM 5.3) or Muse by Meta, with a fixture mode that runs without any inference key | Node.js and npm, Postgres 14+ (Docker command provided), and a Crusoe API key or Meta Model API key for live agents |
 
 The MLPerf example is a complete, self-contained directory with its own Apache-2.0 license. It scales down to a single node for validation before the full run. Read its README before applying anything: the manifests create a namespace, a shared persistent volume, and Jobs that occupy entire MI355X nodes, and those resources incur charges until cleaned up.
 
