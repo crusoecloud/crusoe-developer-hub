@@ -21,31 +21,71 @@ def _sharper_inline_figures() -> None:
 
 _sharper_inline_figures()
 
-from .data import load_math500  # noqa: E402
+from .data import load_math500, load_math_train  # noqa: E402
 from .device import get_device, peak_memory_gb  # noqa: E402
-from .evaluate import MATH_PROMPT, evaluate_math, render_math_prompt  # noqa: E402
-from .generate import generate_text, generate_tokens  # noqa: E402
-from .model import QWEN3_0_6B, KVCache, Qwen3Config, Qwen3Model, load_qwen3  # noqa: E402
-from .tokenizer import Qwen3Tokenizer  # noqa: E402
-from .verify import extract_final_answer, grade, is_equivalent, normalize_answer  # noqa: E402
+from .evaluate import COT_PROMPT, MATH_PROMPT, evaluate_math, render_math_prompt  # noqa: E402
+from .generate import generate_text, generate_tokens, scale_by_temperature, top_p_filter  # noqa: E402
+from .grpo import (  # noqa: E402
+    correctness_reward,
+    group_advantages,
+    grpo_loss,
+    grpo_step,
+    sample_response,
+    save_checkpoint,
+    sequence_logprob,
+    train_grpo,
+)
+from .model import KVCache, Qwen3Config, Qwen3Model, load_qwen3  # noqa: E402
+from .refine import (  # noqa: E402
+    CRITIQUE_PROMPT,
+    REFINE_PROMPT,
+    render_critique_prompt,
+    render_refine_prompt,
+    self_refine,
+)
+from .scoring import avg_logprob, best_of_n, heuristic_score, token_logprobs  # noqa: E402
+from .verify import extract_final_answer, grade, is_equivalent, last_boxed, normalize_answer  # noqa: E402
+from .voting import majority_vote, self_consistency  # noqa: E402
 
 __all__ = [
+    "COT_PROMPT",
+    "CRITIQUE_PROMPT",
     "MATH_PROMPT",
-    "QWEN3_0_6B",
+    "REFINE_PROMPT",
     "KVCache",
     "Qwen3Config",
     "Qwen3Model",
-    "Qwen3Tokenizer",
+    "avg_logprob",
+    "best_of_n",
+    "correctness_reward",
     "evaluate_math",
     "extract_final_answer",
     "generate_text",
     "generate_tokens",
     "get_device",
     "grade",
+    "group_advantages",
+    "grpo_loss",
+    "grpo_step",
+    "heuristic_score",
     "is_equivalent",
+    "last_boxed",
     "load_math500",
+    "load_math_train",
     "load_qwen3",
+    "majority_vote",
     "normalize_answer",
     "peak_memory_gb",
+    "render_critique_prompt",
     "render_math_prompt",
+    "render_refine_prompt",
+    "sample_response",
+    "save_checkpoint",
+    "scale_by_temperature",
+    "self_consistency",
+    "self_refine",
+    "sequence_logprob",
+    "token_logprobs",
+    "top_p_filter",
+    "train_grpo",
 ]

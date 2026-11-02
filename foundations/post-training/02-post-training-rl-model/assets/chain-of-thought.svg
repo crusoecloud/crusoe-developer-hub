@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 420" width="1280" height="420" font-family="'Roboto Mono','Menlo','Courier New',monospace" font-size="14">
+  <style>
+    .box { stroke: #000; stroke-width: 2; }
+    .t { fill: #000; }
+    .tw { fill: #fff; }
+    .small { font-size: 12px; }
+    .tiny { font-size: 11px; }
+    .label { font-size: 12px; fill: #395761; }
+    .arrow { stroke: #000; stroke-width: 2; fill: none; marker-end: url(#head); }
+    .bold { font-weight: 600; }
+  </style>
+  <defs>
+    <marker id="head" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#000"/>
+    </marker>
+  </defs>
+
+  <!-- column titles -->
+  <text x="300" y="34" text-anchor="middle" class="label">the prompt template as it is</text>
+  <text x="980" y="34" text-anchor="middle" class="label">the same template plus one sentence</text>
+
+  <!-- left: plain prompt -->
+  <rect x="40" y="50" width="520" height="150" class="box" fill="#C3D6E7"/>
+  <text x="56" y="76" class="t small">Answer the question and write the final result</text>
+  <text x="56" y="96" class="t small">on a new line as: \boxed{ANSWER}</text>
+  <text x="56" y="126" class="t small">Question:</text>
+  <text x="56" y="146" class="t small">A rectangle's length is 4 more than twice its</text>
+  <text x="56" y="166" class="t small">width. Its perimeter is 50. What is its area?</text>
+  <text x="56" y="190" class="t small bold">Answer:</text>
+
+  <path d="M300,200 L300,238" class="arrow"/>
+  <rect x="220" y="240" width="160" height="40" class="box" fill="#395761"/>
+  <text x="300" y="265" text-anchor="middle" class="tw">LLM, greedy</text>
+  <path d="M300,280 L300,318" class="arrow"/>
+
+  <!-- left: bare answer -->
+  <rect x="40" y="320" width="520" height="60" class="box" fill="#E4E2E0"/>
+  <text x="56" y="356" class="t">\boxed{120}</text>
+  <text x="544" y="356" text-anchor="end" class="t small">5 tokens, wrong</text>
+  <text x="300" y="404" text-anchor="middle" class="label">a guess: the model jumped from question to number</text>
+
+  <!-- right: prompt with the sentence -->
+  <rect x="720" y="50" width="520" height="150" class="box" fill="#C3D6E7"/>
+  <text x="736" y="76" class="t small">Answer the question and write the final result</text>
+  <text x="736" y="96" class="t small">on a new line as: \boxed{ANSWER}</text>
+  <text x="736" y="126" class="t small">Question:</text>
+  <text x="736" y="146" class="t small">A rectangle's length is 4 more than twice its</text>
+  <text x="736" y="166" class="t small">width. Its perimeter is 50. What is its area?</text>
+  <text x="736" y="190" class="t small bold">Answer:</text>
+  <rect x="800" y="174" width="258" height="22" fill="#CEEB13" stroke="#000" stroke-width="1.5"/>
+  <text x="808" y="190" class="t small bold">Show your work step by step.</text>
+
+  <path d="M980,200 L980,238" class="arrow"/>
+  <rect x="900" y="240" width="160" height="40" class="box" fill="#395761"/>
+  <text x="980" y="265" text-anchor="middle" class="tw">LLM, greedy</text>
+  <path d="M980,280 L980,318" class="arrow"/>
+
+  <!-- right: worked answer -->
+  <rect x="720" y="320" width="520" height="60" class="box" fill="#ECAC45"/>
+  <text x="736" y="344" class="t tiny">l = 2w + 4;  2l + 2w = 50;  6w + 8 = 50;  w = 7, l = 18</text>
+  <text x="736" y="368" class="t">\boxed{126}</text>
+  <text x="1224" y="368" text-anchor="end" class="t small">a few hundred tokens, right</text>
+  <text x="980" y="404" text-anchor="middle" class="label">a computation: each step conditions the next</text>
+</svg>

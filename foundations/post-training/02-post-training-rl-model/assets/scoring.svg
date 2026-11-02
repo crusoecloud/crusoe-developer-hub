@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 440" width="1280" height="440" font-family="'Roboto Mono','Menlo','Courier New',monospace" font-size="14">
+  <style>
+    .box { stroke: #000; stroke-width: 2; }
+    .t { fill: #000; }
+    .tw { fill: #fff; }
+    .small { font-size: 12px; }
+    .label { font-size: 12px; fill: #395761; }
+    .arrow { stroke: #000; stroke-width: 2; fill: none; marker-end: url(#head); }
+    .brace { stroke: #395761; stroke-width: 2; fill: none; }
+  </style>
+  <defs>
+    <marker id="head" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#000"/>
+    </marker>
+  </defs>
+
+  <!-- the response under judgment -->
+  <rect x="490" y="24" width="300" height="56" class="box" fill="#395761"/>
+  <text x="640" y="48" text-anchor="middle" class="tw">one model response</text>
+  <text x="640" y="68" text-anchor="middle" class="tw small">prompt in, a few hundred tokens out</text>
+
+  <path d="M560,80 L250,138" class="arrow"/>
+  <path d="M640,80 L640,138" class="arrow"/>
+  <path d="M720,80 L1030,138" class="arrow"/>
+
+  <!-- rule-based -->
+  <rect x="60" y="140" width="380" height="190" class="box" fill="#C3D6E7"/>
+  <text x="250" y="170" text-anchor="middle" class="t">rule-based score</text>
+  <text x="250" y="192" text-anchor="middle" class="label">reads the shape of the text</text>
+  <text x="90" y="226" class="t small">a boxed final answer      +2.0</text>
+  <text x="90" y="250" class="t small">else at least a number    +1.0</text>
+  <text x="90" y="274" class="t small">brevity bonus, decays with length</text>
+  <text x="250" y="312" text-anchor="middle" class="label">needs: nothing but the text</text>
+
+  <!-- confidence -->
+  <rect x="450" y="140" width="380" height="190" class="box" fill="#CEEB13"/>
+  <text x="640" y="170" text-anchor="middle" class="t">confidence score</text>
+  <text x="640" y="192" text-anchor="middle" class="label">reads the model's own probabilities</text>
+  <text x="480" y="226" class="t small">log-probability of each response</text>
+  <text x="480" y="250" class="t small">token given everything before it,</text>
+  <text x="480" y="274" class="t small">averaged over the response</text>
+  <text x="640" y="312" text-anchor="middle" class="label">needs: one forward pass</text>
+
+  <!-- verifier -->
+  <rect x="840" y="140" width="380" height="190" class="box" fill="#ECAC45"/>
+  <text x="1030" y="170" text-anchor="middle" class="t">math verifier</text>
+  <text x="1030" y="192" text-anchor="middle" class="label">compares with the reference answer</text>
+  <text x="870" y="226" class="t small">extract the final answer,</text>
+  <text x="870" y="250" class="t small">normalize, parse with SymPy,</text>
+  <text x="870" y="274" class="t small">compare: correct or not</text>
+  <text x="1030" y="312" text-anchor="middle" class="label">needs: the reference answer</text>
+
+  <!-- braces and roles -->
+  <path d="M60,352 L60,366 L830,366 L830,352" class="brace"/>
+  <text x="445" y="392" text-anchor="middle" class="t small">reference-free: usable at inference time to rank samples or gate a rewrite</text>
+  <path d="M840,352 L840,366 L1220,366 L1220,352" class="brace"/>
+  <text x="1030" y="392" text-anchor="middle" class="t small">the benchmark judge, and the reward in the RL stage</text>
+  <text x="640" y="424" text-anchor="middle" class="label">a score is a number that says "this response is better than that one" without a human in the loop</text>
+</svg>

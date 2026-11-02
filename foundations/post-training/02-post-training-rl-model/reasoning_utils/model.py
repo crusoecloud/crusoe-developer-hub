@@ -203,7 +203,8 @@ class Qwen3Model(nn.Module):
             if cache is not None:
                 cache.update(i, new_cache)
 
-        return self.lm_head(self.norm(x).to(self.cfg.dtype))
+        # Match the head's dtype rather than the config's, so a model cast to float32 for training still runs.
+        return self.lm_head(self.norm(x).to(self.lm_head.weight.dtype))
 
 
 def load_hf_state_dict(model: Qwen3Model, state_dict: dict) -> None:
@@ -225,11 +226,13 @@ def load_hf_state_dict(model: Qwen3Model, state_dict: dict) -> None:
         model.lm_head.weight = model.embed_tokens.weight  # keep them tied
 
 
-def load_qwen3(kind: str = "base", device=None, compile: bool = False):
+def load_qwen3(kind: str = "base", device=None, compile: bool = False, checkpoint: str | None = None):
     """Download (once) and load Qwen3-0.6B plus its tokenizer.
 
     kind: "base" for the pretrained model, "reasoning" for the post-trained one.
-    Returns (model, tokenizer). The model is in eval mode on `device`.
+    checkpoint: an optional state dict saved by the GRPO notebook, loaded on top
+    of the pretrained weights. Returns (model, tokenizer). The model is in eval
+    mode on `device`.
     """
     from huggingface_hub import hf_hub_download
     from safetensors.torch import load_file
@@ -244,11 +247,17 @@ def load_qwen3(kind: str = "base", device=None, compile: bool = False):
 
     model = Qwen3Model(QWEN3_0_6B)
     load_hf_state_dict(model, load_file(weights_path))
+    if checkpoint is not None:
+        state = torch.load(checkpoint, map_location="cpu", weights_only=True)  # a plain state dict, no pickled code
+        model.load_state_dict(state)  # copies in place, so the tied output head stays tied
     model.eval()
     if device is not None:
         model.to(device)
     if compile:
         torch._dynamo.config.allow_unspec_int_on_nn_module = True
+        # Training runs the model in several modes (cached sampling, scoring with and without gradients, a
+        # float32 copy), and each needs its own compiled graph; the default limit of 8 falls back to eager.
+        torch._dynamo.config.recompile_limit = 32
         model = torch.compile(model)
 
     tokenizer = Qwen3Tokenizer(tokenizer_path, chat_template=(kind == "reasoning"))

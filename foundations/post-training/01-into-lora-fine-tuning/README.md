@@ -11,20 +11,45 @@ QLoRA applies LoRA on top of a quantized base model. After learning the mechanic
 | [01_quantization.ipynb](01_quantization.ipynb) | Why numeric precision matters, quantization and dequantization implemented by hand, why per-channel granularity beats per-tensor on real transformer weights, mixed precision versus quantization, the NF4 format, and loading a real Hugging Face model in 4 bit with bitsandbytes |
 | [02_lora_and_qlora.ipynb](02_lora_and_qlora.ipynb) | Why full fine tuning is expensive, a LoRA linear layer implemented from scratch in PyTorch and applied to a real pretrained model, confirming the adapter is genuinely low rank, then combining it with quantization using `transformers`, `peft`, and `bitsandbytes` to fine tune a real model end to end and merge the result |
 
-## Quickstart
+Work through them in order. `01_quantization.ipynb` uses an NVIDIA GPU for its CUDA timing and model quantization cells. `02_lora_and_qlora.ipynb` starts on plain PyTorch, no GPU required, and only needs one once it gets to the QLoRA section partway through.
 
-These two notebooks share the environment in `foundations/post-training`. See the [post-training README](../README.md) for GPU prerequisites, optional Crusoe VM setup, and environment installation with `uv`.
+## Setup
 
-From `foundations/post-training`, after setup:
+### Create a VM with an NVIDIA GPU on Crusoe Cloud
+
+Sign in to the [Crusoe Console](https://console.crusoecloud.com/) and follow the [VM creation guide](https://docs.crusoecloud.com/quickstart/creating-a-vm/index.html). Choose a GPU instance and an image with NVIDIA drivers, add your SSH key, and leave room on the boot disk for model downloads (at least 50 GB). Connect with the instance's public IP:
 
 ```bash
-cd 01-into-lora-fine-tuning
-../.venv/bin/jupyter lab 01_quantization.ipynb
+ssh ubuntu@<PUBLIC_IP>
 ```
-Follow the notebooks:
 
-- `01_quantization.ipynb` uses an NVIDIA GPU for its CUDA timing and model quantization cells.
-- `02_lora_and_qlora.ipynb` starts on plain PyTorch, no GPU required, and only needs one once it gets to the QLoRA section partway through.
+See [Accessing your VMs](https://docs.crusoecloud.com/compute/virtual-machines/accessing-vms/index.html) for details. A VM and its storage incur charges while they exist; delete what you no longer need after saving your work. No Crusoe API key or environment variables are needed by these notebooks.
+
+### Install the environment
+
+This track uses [`uv`](https://docs.astral.sh/uv/) for Python and dependencies, with its packages listed in `requirements.txt` in this folder. The environment is separate from the other post-training track.
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+git clone https://github.com/crusoecloud/crusoe-developer-hub.git
+cd crusoe-developer-hub/foundations/post-training/01-into-lora-fine-tuning
+uv venv .venv --python 3.12
+uv pip install --python .venv/bin/python -r requirements.txt
+```
+
+### Run the notebooks
+
+```bash
+.venv/bin/jupyter lab
+```
+
+Open the notebooks from JupyterLab and pick the default Python 3 kernel. If the VM is remote, forward the port (`ssh -L 8888:localhost:8888 ubuntu@<PUBLIC_IP>`) and open the printed URL locally.
+
+The notebooks display quantization error, memory comparisons, LoRA parameter counts, and training results. Values depend on hardware and the run; use the explanations and assertions in each notebook to interpret them.
+
+## Cleanup
+
+Stop Jupyter when finished. Training writes local artifacts under `outputs/`, which git ignores; keep any results you need before removing generated files. Model and dataset downloads stay in your Hugging Face cache. Closing Jupyter does not remove the VM or its disk.
 
 ## Further reading
 
@@ -41,3 +66,4 @@ Follow the notebooks:
 - [Build a Large Language Model (From Scratch)](https://www.manning.com/books/build-a-large-language-model-from-scratch)
 - [Fine-Tuning LLMs](https://leanpub.com/finetuning)
 
+[All foundations](../../README.md) | [Training examples](../../../examples/training/)

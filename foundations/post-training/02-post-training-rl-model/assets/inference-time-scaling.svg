@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 400" width="1280" height="400" font-family="'Roboto Mono','Menlo','Courier New',monospace" font-size="14">
+  <style>
+    .box { stroke: #000; stroke-width: 2; }
+    .t { fill: #000; }
+    .tw { fill: #fff; }
+    .small { font-size: 12px; }
+    .label { font-size: 12px; fill: #395761; }
+    .arrow { stroke: #000; stroke-width: 2; fill: none; marker-end: url(#head); }
+    .dash { stroke: #395761; stroke-width: 2; fill: none; stroke-dasharray: 6 5; }
+  </style>
+  <defs>
+    <marker id="head" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#000"/>
+    </marker>
+  </defs>
+
+  <!-- the one model, weights frozen -->
+  <rect x="40" y="140" width="200" height="120" class="box" fill="#395761"/>
+  <text x="140" y="190" text-anchor="middle" class="tw">pretrained LLM</text>
+  <text x="140" y="214" text-anchor="middle" class="tw small">weights frozen</text>
+  <text x="140" y="110" text-anchor="middle" class="label">same model for every method</text>
+
+  <!-- fan out -->
+  <path d="M240,170 L318,90" class="arrow"/>
+  <path d="M240,200 L318,200" class="arrow"/>
+  <path d="M240,230 L318,310" class="arrow"/>
+
+  <!-- method 1: ask for the work -->
+  <rect x="320" y="50" width="380" height="80" class="box" fill="#C3D6E7"/>
+  <circle cx="348" cy="90" r="12" fill="#000"/><text x="348" y="95" text-anchor="middle" class="tw small">1</text>
+  <text x="530" y="84" text-anchor="middle" class="t">ask for the work</text>
+  <text x="530" y="108" text-anchor="middle" class="t small">a "step by step" request in the prompt</text>
+
+  <!-- method 2: sample and vote -->
+  <rect x="320" y="160" width="380" height="80" class="box" fill="#CEEB13"/>
+  <circle cx="348" cy="200" r="12" fill="#000"/><text x="348" y="205" text-anchor="middle" class="tw small">2</text>
+  <text x="530" y="194" text-anchor="middle" class="t">sample several chains, vote</text>
+  <text x="530" y="218" text-anchor="middle" class="t small">temperature and top-p, then the majority</text>
+
+  <!-- method 3: critique and revise -->
+  <rect x="320" y="270" width="380" height="80" class="box" fill="#99AE88"/>
+  <circle cx="348" cy="310" r="12" fill="#000"/><text x="348" y="315" text-anchor="middle" class="tw small">3</text>
+  <text x="530" y="304" text-anchor="middle" class="t">critique and revise</text>
+  <text x="530" y="328" text-anchor="middle" class="t small">the model edits its own answer</text>
+
+  <!-- cost column -->
+  <text x="900" y="30" text-anchor="middle" class="label">cost: tokens generated per problem</text>
+  <path d="M700,90 L768,90" class="arrow"/>
+  <path d="M700,200 L768,200" class="arrow"/>
+  <path d="M700,310 L768,310" class="arrow"/>
+
+  <rect x="770" y="70" width="80" height="40" class="box" fill="#fff"/>
+  <text x="810" y="95" text-anchor="middle" class="t small">1 chain</text>
+  <text x="870" y="95" text-anchor="start" class="t small">one long answer</text>
+
+  <rect x="770" y="180" width="80" height="40" class="box" fill="#fff"/>
+  <rect x="780" y="180" width="80" height="40" class="box" fill="#fff"/>
+  <rect x="790" y="180" width="80" height="40" class="box" fill="#fff"/>
+  <text x="830" y="205" text-anchor="middle" class="t small">n chains</text>
+  <text x="890" y="205" text-anchor="start" class="t small">about n times method 1</text>
+
+  <rect x="770" y="290" width="80" height="40" class="box" fill="#fff"/>
+  <text x="810" y="315" text-anchor="middle" class="t small">1 chain</text>
+  <text x="870" y="315" text-anchor="start" class="t small">plus critique and rewrite</text>
+
+  <!-- the judge -->
+  <rect x="1080" y="150" width="180" height="100" class="box" fill="#ECAC45"/>
+  <text x="1170" y="190" text-anchor="middle" class="t">math verifier</text>
+  <text x="1170" y="214" text-anchor="middle" class="t small">MATH-500 accuracy</text>
+  <path d="M1170,250 L1170,380 L510,380 L510,352" class="dash"/>
+  <text x="840" y="372" text-anchor="middle" class="label">every method is scored by the same harness</text>
+</svg>
