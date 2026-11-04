@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="580" viewBox="0 0 1200 580" role="img" aria-labelledby="t d">
+  <title id="t">Sending Megatron-Bridge training metrics to Crusoe Managed MLflow</title>
+  <desc id="d">A benchmark runs on a Slurm or Kubernetes cluster on Crusoe, training with Megatron-Bridge inside the NeMo container. The MLflow client built into Megatron-Bridge sends params, metrics and tags over HTTPS to Crusoe Managed MLflow. Enabling it takes three environment variables and three Megatron-Bridge logger settings.</desc>
+  <defs>
+    <style>
+      text { font-family: "ABC Diatype Mono", "Roboto Mono", Menlo, Consolas, monospace; }
+      .h    { font-size: 18px; font-weight: 700; }
+      .s    { font-size: 14px; }
+      .xs   { font-size: 13px; }
+      .lbl  { font-size: 12px; fill: #C3D6E7; }
+      .mute { fill: #A3A3A3; }
+      .line { stroke: #7799B6; stroke-width: 2; fill: none; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#7799B6"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="580" fill="#000000"/>
+
+  <!-- Left column: your cluster -->
+  <rect x="40" y="70" width="380" height="64" fill="#7799B6"/>
+  <rect x="40" y="70" width="380" height="6" fill="#CEEB13"/>
+  <text x="230" y="112" text-anchor="middle" class="h" fill="#000">GPU cluster on Crusoe</text>
+
+  <text x="60" y="158" class="lbl">EITHER SCHEDULER</text>
+
+  <rect x="60" y="168" width="165" height="44" fill="#1C2A36" stroke="#7799B6" stroke-width="2"/>
+  <text x="142" y="196" text-anchor="middle" class="s" fill="#FFF">Slurm</text>
+
+  <rect x="235" y="168" width="165" height="44" fill="#1C2A36" stroke="#7799B6" stroke-width="2"/>
+  <text x="317" y="196" text-anchor="middle" class="s" fill="#FFF">Kubernetes</text>
+
+  <rect x="60" y="226" width="340" height="44" fill="#1C2A36" stroke="#7799B6" stroke-width="2"/>
+  <text x="230" y="254" text-anchor="middle" class="s" fill="#FFF">exemplar-performance (llmb-run)</text>
+
+  <rect x="60" y="284" width="340" height="44" fill="#1C2A36" stroke="#7799B6" stroke-width="2"/>
+  <text x="230" y="312" text-anchor="middle" class="s" fill="#FFF">Megatron-Bridge in NeMo</text>
+
+  <text x="230" y="350" text-anchor="middle" class="xs mute">MLflow client is already built in</text>
+
+  <!-- Right column: Managed MLflow -->
+  <rect x="780" y="70" width="380" height="64" fill="#395761"/>
+  <rect x="780" y="70" width="380" height="6" fill="#CEEB13"/>
+  <text x="970" y="105" text-anchor="middle" class="h" fill="#FFF">Crusoe Managed MLflow</text>
+  <text x="970" y="125" text-anchor="middle" class="xs" fill="#C3D6E7">hosted tracking server and UI</text>
+
+  <text x="800" y="158" class="lbl">WHAT IT RECORDS</text>
+
+  <rect x="800" y="168" width="340" height="44" fill="#1C2A36" stroke="#395761" stroke-width="2"/>
+  <text x="970" y="196" text-anchor="middle" class="s" fill="#FFF">params: the resolved config</text>
+
+  <rect x="800" y="226" width="340" height="44" fill="#1C2A36" stroke="#395761" stroke-width="2"/>
+  <text x="970" y="248" text-anchor="middle" class="s" fill="#FFF">metrics: lm loss, grad norm,</text>
+  <text x="970" y="265" text-anchor="middle" class="s" fill="#FFF">lr, batch size, step time</text>
+
+  <rect x="800" y="284" width="340" height="44" fill="#1C2A36" stroke="#395761" stroke-width="2"/>
+  <text x="970" y="312" text-anchor="middle" class="s" fill="#FFF">tags: job id, GPU product</text>
+
+  <!-- The link between them -->
+  <line x1="412" y1="249" x2="788" y2="249" class="line" marker-end="url(#arrow)"/>
+  <text x="600" y="230" text-anchor="middle" class="s" fill="#FFF">params, metrics, tags</text>
+  <text x="600" y="277" text-anchor="middle" class="xs mute">HTTPS, one point per log interval</text>
+
+  <!-- Bottom card: the whole integration -->
+  <rect x="160" y="394" width="880" height="150" fill="#000000" stroke="#7799B6" stroke-width="2"/>
+  <rect x="160" y="394" width="880" height="6" fill="#CEEB13"/>
+  <text x="600" y="431" text-anchor="middle" class="h" fill="#FFF">Enabling tracking takes configuration, not code</text>
+
+  <text x="200" y="466" class="lbl">THREE ENVIRONMENT VARIABLES</text>
+  <text x="200" y="490" class="xs" fill="#FFF">MLFLOW_TRACKING_URI</text>
+  <text x="200" y="510" class="xs" fill="#FFF">MLFLOW_TRACKING_TOKEN</text>
+  <text x="200" y="530" class="xs" fill="#FFF">MLFLOW_WORKSPACE</text>
+
+  <line x1="600" y1="452" x2="600" y2="536" stroke="#395761" stroke-width="2"/>
+
+  <text x="640" y="466" class="lbl">THREE MEGATRON-BRIDGE SETTINGS</text>
+  <text x="640" y="490" class="xs" fill="#FFF">logger.mlflow_experiment</text>
+  <text x="640" y="510" class="xs" fill="#FFF">logger.mlflow_run_name</text>
+  <text x="640" y="530" class="xs" fill="#FFF">logger.mlflow_tags</text>
+</svg>
