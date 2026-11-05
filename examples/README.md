@@ -9,6 +9,7 @@ Build toward a concrete outcome. Examples are organized by developer task, with 
 | Call models or build a serving workflow | [Inference](inference/) | [MLPerf Inference v6.1 on AMD MI355X](inference/mlperf-inference-amd-mi355x-v6.1/) and [AI Infrastructure SimCity](inference/ai-infrastructure-simcity/); related integrations and serving solutions linked |
 | Follow an end-to-end event session | [Workshop](workshop/) | Planned content |
 | Apply a focused recipe | [Cookbooks](cookbooks/) | [Managed MLflow](cookbooks/managed-mlflow/) |
+| Build at a hackathon, or see what teams built on Crusoe | [Hackathons](hackathons/) | [Recursive Agents Hackathon kit](hackathons/crusoe-cv-recursive-agents-hackathon/), plus the projects from [The AI Conference Hack Day 2026](hackathons/the-ai-conference-hack-day-2026/) and the [Recursive Agents Hackathon](hackathons/crusoe-cv-recursive-agents-hackathon/projects.md) |
 
 Start with the selected entry's README, then run its commands from the specified directory. Dependencies, credentials, hardware, model access, and costs vary; there is no common installation for all examples.
 
