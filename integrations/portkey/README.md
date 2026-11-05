@@ -54,12 +54,28 @@ A gateway config can fall back from one Crusoe model to another, or from Crusoe 
 {
   "strategy": { "mode": "fallback" },
   "targets": [
-    { "provider": "openai", "custom_host": "https://api.inference.crusoecloud.com/v1", "api_key": "$CRUSOE_API_KEY", "override_params": { "model": "zai/GLM-5.3" } },
-    { "provider": "openai", "custom_host": "https://api.inference.crusoecloud.com/v1", "api_key": "$CRUSOE_API_KEY", "override_params": { "model": "meta-llama/Llama-3.3-70B-Instruct" } }
+    { "provider": "openai", "custom_host": "https://api.inference.crusoecloud.com/v1", "api_key": "<crusoe api key>", "override_params": { "model": "zai/GLM-5.3" } },
+    { "provider": "openai", "custom_host": "https://api.inference.crusoecloud.com/v1", "api_key": "<crusoe api key>", "override_params": { "model": "meta-llama/Llama-3.3-70B-Instruct" } }
   ]
 }
 ```
 
-Pass it as the `x-portkey-config` header. After Portkey-AI/gateway#1732 merges, replace `"provider": "openai"` plus `custom_host` with `"provider": "crusoe"`.
+The config travels in the `x-portkey-config` header as JSON, and JSON does not expand environment variables, so the key has to be substituted before the request. Build the header in the shell with `jq`, which reads the key from the environment and never puts it in a file:
+
+```bash
+PORTKEY_CONFIG=$(jq -nc --arg k "$CRUSOE_API_KEY" '{
+  strategy: {mode: "fallback"},
+  targets: [
+    {provider: "openai", custom_host: "https://api.inference.crusoecloud.com/v1", api_key: $k, override_params: {model: "zai/GLM-5.3"}},
+    {provider: "openai", custom_host: "https://api.inference.crusoecloud.com/v1", api_key: $k, override_params: {model: "meta-llama/Llama-3.3-70B-Instruct"}}
+  ]}')
+
+curl http://localhost:8787/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-config: $PORTKEY_CONFIG" \
+  -d '{"messages": [{"role": "user", "content": "Hello from Portkey"}]}'
+```
+
+After Portkey-AI/gateway#1732 merges, replace `"provider": "openai"` plus `custom_host` with `"provider": "crusoe"`.
 
 [Back to integrations](../README.md)
