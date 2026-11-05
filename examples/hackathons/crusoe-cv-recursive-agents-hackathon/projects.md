@@ -2,7 +2,7 @@
 
 [The Recursive Agents Hackathon](https://cerebralvalley.ai/e/crusoe-recursive-agents-hackathon) ran on October 17, 2026 in San Francisco during the PyTorch Conference, hosted by [Cerebral Valley](https://cerebralvalley.ai/) and Crusoe, with $25,000 in cash prizes and an NVIDIA RTX 5090. The brief was to build a team of agents you can walk away from, on [Crusoe Managed Inference](https://www.crusoe.ai/cloud/managed-inference) with open models including NVIDIA's Nemotron family. The event kit, including the Crusoe skill file participants used, is in the [developer hub](README.md).
 
-The [gallery](https://cerebralvalley.ai/e/crusoe-recursive-agents-hackathon/hackathon/gallery) holds 90 submitted projects, all built on Crusoe Managed Inference. The three winners are listed here. Project names link to the Cerebral Valley gallery page, which holds the full description, team and demo.
+The [gallery](https://cerebralvalley.ai/e/crusoe-recursive-agents-hackathon/hackathon/gallery) holds 108 submitted projects, all built on Crusoe Managed Inference. The three winners are listed here. Project names link to the Cerebral Valley gallery page, which holds the full description, team and demo.
 
 ## Winners
 
