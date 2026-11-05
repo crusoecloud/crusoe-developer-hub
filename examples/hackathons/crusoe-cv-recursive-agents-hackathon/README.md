@@ -28,3 +28,7 @@ Ask your agent about:
 - Models
 - Metrics
 - Troubleshooting
+
+## Projects
+
+The [gallery](https://cerebralvalley.ai/e/crusoe-recursive-agents-hackathon/hackathon/gallery) holds 108 submitted projects. The three winners, with how each used Crusoe, are in [projects.md](projects.md), and the same data is in [projects.json](projects.json).

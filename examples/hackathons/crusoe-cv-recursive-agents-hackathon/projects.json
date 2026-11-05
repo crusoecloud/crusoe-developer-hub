@@ -1,0 +1,40 @@
+{
+  "event": "The Recursive Agents Hackathon",
+  "date": "2026-10-17",
+  "url": "https://cerebralvalley.ai/e/crusoe-recursive-agents-hackathon",
+  "projects": [
+    {
+      "name": "Etch",
+      "team": "Pranav Achar, Nithin",
+      "summary": "Etch turns one sentence into a real circuit board. You say “build a GPS tracker like an AirTag” and walk away.",
+      "crusoe": "Nemotron 3 Super and Nemotron 3.5 Lightning on Crusoe Managed Inference, with NVIDIA's prompt complexity classifier for routing.",
+      "place": "1st Place",
+      "page": "https://cerebralvalley.ai/e/crusoe-recursive-agents-hackathon/hackathon/gallery/58",
+      "github": "https://github.com/PranavAchar01/etch",
+      "repo_public": true,
+      "demo": "https://drive.google.com/drive/folders/1TBUbX_thPRFOxTHU5YdWisOwfpo3xfJn?usp=sharing"
+    },
+    {
+      "name": "SPARKLETEAM",
+      "team": "Dave Rauchwerk",
+      "summary": "SPARKLETEAM is a self-improving agent team that teaches itself to load a dishwasher.",
+      "crusoe": "Runs five NVIDIA Nemotron models on Crusoe Managed Inference in a live self-improving loop.",
+      "place": "2nd Place",
+      "page": "https://cerebralvalley.ai/e/crusoe-recursive-agents-hackathon/hackathon/gallery/5",
+      "github": "https://github.com/elevenarms/RSHI",
+      "repo_public": true,
+      "demo": "https://elevenarms.github.io/RSHI/assets/video/sparkleteam-demo.mp4"
+    },
+    {
+      "name": "AGI Factory",
+      "team": "Touko Ursin",
+      "summary": "AGI Factory is a robot maintenance team that rewrites itself and keeps a change only when unseen factory months prove it better and safer.",
+      "crusoe": "A self-improving robot maintenance team on Crusoe-hosted Nemotron models; the recorded Crusoe run matches a deterministic local replay.",
+      "place": "3rd Place",
+      "page": "https://cerebralvalley.ai/e/crusoe-recursive-agents-hackathon/hackathon/gallery/50",
+      "github": "https://github.com/ToukoUrsin/factory-autopilot",
+      "repo_public": true,
+      "demo": "https://www.loom.com/share/6174da8d1b294fb4b0171f136a58b3de"
+    }
+  ]
+}

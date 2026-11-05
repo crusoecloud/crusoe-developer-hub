@@ -1,6 +1,6 @@
 # Hackathons
 
-Resources for hackathons Crusoe hosts or sponsors. Each event gets its own folder holding what participants need on the day: a compiled reference for the Crusoe platform as it stands at the event, setup steps, and any starter material. After the event, the folder also lists the projects teams built on Crusoe.
+Resources for hackathons Crusoe hosts or sponsors. Each event gets its own folder holding what participants need on the day: a compiled reference for the Crusoe platform as it stands at the event, setup steps, and any starter material. After the event, the folder also lists the projects teams built on Crusoe, with the data as JSON.
 
 <table>
   <thead>
@@ -14,7 +14,7 @@ Resources for hackathons Crusoe hosts or sponsors. Each event gets its own folde
     <tr>
       <td><a href="the-ai-conference-hack-day-2026/">The AI Conference Hack Day 2026</a> with <a href="https://hackersquad.io/events/the-ai-conference-hack-day-2026">HackerSquad</a></td>
       <td><div align="center">September 29, 2026</div></td>
-      <td><div align="center"><a href="the-ai-conference-hack-day-2026/README.md#overall-winners">top 3 of 40</a></div></td>
+      <td><div align="center"><a href="the-ai-conference-hack-day-2026/projects.md">40 projects</a></div></td>
     </tr>
     <tr>
       <td><a href="crusoe-cv-recursive-agents-hackathon/">Recursive Agents Hackathon</a> with <a href="https://cerebralvalley.ai/e/crusoe-recursive-agents-hackathon">Cerebral Valley</a></td>
@@ -23,7 +23,5 @@ Resources for hackathons Crusoe hosts or sponsors. Each event gets its own folde
     </tr>
   </tbody>
 </table>
-
-Each page lists the winners; the full lists of projects that used Crusoe, with JSON data, are in the [crusoe-hackathons](https://github.com/acheamponge/crusoe-hackathons) repository.
 
 [Back to examples](../README.md)
