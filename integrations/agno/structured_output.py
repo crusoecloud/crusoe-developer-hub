@@ -16,8 +16,10 @@ class IncidentSummary(BaseModel):
     actions: list[str] = Field(description="Up to three follow-up actions")
 
 
+# Stated explicitly so the schema is sent as a json_schema response_format, which Crusoe enforces
+# with guided decoding, rather than falling back to JSON mode if a future Agno release changes the default.
 agent = Agent(
-    model=crusoe("google/gemma-4-31b-it"),
+    model=crusoe("google/gemma-4-31b-it", supports_native_structured_outputs=True),
     description="You write post-incident summaries for a cloud platform team.",
     output_schema=IncidentSummary,
 )

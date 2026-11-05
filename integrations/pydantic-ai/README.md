@@ -43,7 +43,7 @@ agent = Agent(model)
 | Script | What it shows |
 | --- | --- |
 | [`basic.py`](basic.py) | Sync and streamed runs, plus token usage from the response |
-| [`tool_use.py`](tool_use.py) | A tool the model calls to look up live inference rates, with typed dependencies |
+| [`tool_use.py`](tool_use.py) | A tool the model calls to look up inference rates from a small table, with typed dependencies |
 | [`structured_output.py`](structured_output.py) | A Pydantic model as the agent output, validated by guided decoding on Crusoe |
 
 Run any of them with the virtual environment active:
