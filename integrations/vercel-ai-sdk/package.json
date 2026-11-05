@@ -1,0 +1,21 @@
+{
+  "name": "crusoe-vercel-ai-sdk-recipes",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "tsx generate.ts",
+    "stream": "tsx stream.ts",
+    "tools": "tsx tools.ts",
+    "structured": "tsx structured.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "^3.0.85",
+    "ai": "^7.0.163",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}

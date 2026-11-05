@@ -1,0 +1,2 @@
+pipecat-ai[crusoe,deepgram,cartesia,silero,webrtc,runner]>=1.15
+python-dotenv>=1.0
