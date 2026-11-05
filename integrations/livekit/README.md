@@ -5,7 +5,7 @@ Run [LiveKit Agents](https://docs.livekit.io/agents/) voice agents on [Crusoe Ma
 ## Prerequisites
 
 - Python 3.10 or later
-- A Crusoe Inference API key from the [Crusoe Console](https://console.crusoecloud.com/) (**Security > Inference API Key**)
+- A Crusoe Inference API key from the [Crusoe Console](https://console.crusoecloud.com/) (**Intelligence Foundry > Inference > Create API Key**)
 - A LiveKit Cloud project or self-hosted server (`LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`)
 - Speech services for the voice path: the recipe uses [Deepgram](https://deepgram.com/) for speech-to-text and [Cartesia](https://cartesia.ai/) for text-to-speech
 

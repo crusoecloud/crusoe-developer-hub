@@ -5,7 +5,7 @@ Run [Agno](https://docs.agno.com/) agents on [Crusoe Managed Inference](https://
 ## Prerequisites
 
 - Python 3.10 or later
-- A Crusoe Inference API key from the [Crusoe Console](https://console.crusoecloud.com/) (**Security > Inference API Key**)
+- A Crusoe Inference API key from the [Crusoe Console](https://console.crusoecloud.com/) (**Intelligence Foundry > Inference > Create API Key**)
 
 ## Setup
 

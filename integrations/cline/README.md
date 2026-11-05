@@ -4,7 +4,7 @@ Use Crusoe Managed Inference models in [Cline](https://cline.bot), the open-sour
 
 ## Prerequisites
 
-- A Crusoe Inference API key from the [Crusoe Console](https://console.crusoecloud.com/) (**Security > Inference API Key**)
+- A Crusoe Inference API key from the [Crusoe Console](https://console.crusoecloud.com/) (**Intelligence Foundry > Inference > Create API Key**)
 - Cline installed from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=saoudrizwan.claude-dev), or the Cline CLI
 
 ## Setup in VS Code

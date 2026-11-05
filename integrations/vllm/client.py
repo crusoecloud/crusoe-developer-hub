@@ -19,14 +19,16 @@ client = OpenAI(
 
 def stream_answer() -> None:
     print("--- streaming ---")
-    with client.chat.completions.stream(
+    stream = client.chat.completions.create(
         model=MODEL,
         messages=[{"role": "user", "content": "In two sentences, what is continuous batching?"}],
         max_tokens=200,
-    ) as stream:
-        for event in stream:
-            if event.type == "content.delta":
-                print(event.delta, end="", flush=True)
+        stream=True,
+    )
+    for chunk in stream:
+        delta = chunk.choices[0].delta.content if chunk.choices else None
+        if delta:
+            print(delta, end="", flush=True)
     print()
 
 

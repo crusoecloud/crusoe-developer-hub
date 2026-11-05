@@ -5,7 +5,7 @@ Build voice and multimodal agents on [Crusoe Managed Inference](https://www.crus
 ## Prerequisites
 
 - Python 3.10 or later
-- A Crusoe Inference API key from the [Crusoe Console](https://console.crusoecloud.com/) (**Security > Inference API Key**)
+- A Crusoe Inference API key from the [Crusoe Console](https://console.crusoecloud.com/) (**Intelligence Foundry > Inference > Create API Key**)
 - For the voice bot: a [Deepgram](https://deepgram.com/) key for speech-to-text and a [Cartesia](https://cartesia.ai/) key for text-to-speech. Swap either for another Pipecat service if you prefer.
 
 ## Setup

@@ -22,7 +22,8 @@ def gpu_availability(region: str, gpu_type: str) -> dict:
         ("eu-iceland1", "h100"): 256,
         ("eu-iceland1", "mi355x"): 128,
     }
-    return {"region": region, "gpu_type": gpu_type, "available": inventory.get((region, gpu_type), 0)}
+    key = (region.lower(), gpu_type.lower())
+    return {"region": region, "gpu_type": gpu_type, "available": inventory.get(key, 0)}
 
 
 if __name__ == "__main__":

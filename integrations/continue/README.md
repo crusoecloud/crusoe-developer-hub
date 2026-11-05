@@ -1,10 +1,10 @@
 # Using Crusoe with Continue
 
-Use Crusoe Managed Inference models for chat, edit, and autocomplete in [Continue](https://continue.dev), the open-source AI code assistant for VS Code and JetBrains. Continue's OpenAI-compatible provider works with Crusoe today; a native `crusoe` provider with a docs page is in review upstream ([continuedev/continue#13136](https://github.com/continuedev/continue/pull/13136)) and shortens the config to `provider: crusoe`.
+Use Crusoe Managed Inference models for chat, edit, and apply in [Continue](https://continue.dev), the open-source AI code assistant for VS Code and JetBrains. Continue's OpenAI-compatible provider works with Crusoe today; a native `crusoe` provider with a docs page is in review upstream ([continuedev/continue#13136](https://github.com/continuedev/continue/pull/13136)) and shortens the config to `provider: crusoe`.
 
 ## Prerequisites
 
-- A Crusoe Inference API key from the [Crusoe Console](https://console.crusoecloud.com/) (**Security > Inference API Key**)
+- A Crusoe Inference API key from the [Crusoe Console](https://console.crusoecloud.com/) (**Intelligence Foundry > Inference > Create API Key**)
 - Continue installed in your editor
 
 ## Setup

@@ -5,7 +5,7 @@ Run [Strands Agents](https://strandsagents.com/) on [Crusoe Managed Inference](h
 ## Prerequisites
 
 - Python 3.10 or later
-- A Crusoe Inference API key from the [Crusoe Console](https://console.crusoecloud.com/) (**Security > Inference API Key**)
+- A Crusoe Inference API key from the [Crusoe Console](https://console.crusoecloud.com/) (**Intelligence Foundry > Inference > Create API Key**)
 
 ## Setup
 
