@@ -39,7 +39,9 @@ def compare(s, workload):
     s += sgl.user(f"Workload: {workload}")
     forks = s.fork(3)
     for fork, gpu in zip(forks, ["H100", "B200", "MI355X"]):
-        fork += sgl.assistant(f"{gpu}: " + sgl.gen("verdict", max_tokens=60))
+        # Chat backends need sgl.gen directly after sgl.assistant, so the label goes in a user turn.
+        fork += sgl.user(f"Assess the {gpu} for this workload.")
+        fork += sgl.assistant(sgl.gen("verdict", max_tokens=60))
     forks.join()
     s["verdicts"] = [f["verdict"] for f in forks]
 
