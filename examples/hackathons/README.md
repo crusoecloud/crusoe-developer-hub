@@ -14,7 +14,7 @@ Resources for hackathons Crusoe hosts or sponsors. Each event gets its own folde
     <tr>
       <td><a href="the-ai-conference-hack-day-2026/">The AI Conference Hack Day 2026</a> with <a href="https://hackersquad.io/events/the-ai-conference-hack-day-2026">HackerSquad</a></td>
       <td><div align="center">September 29, 2026</div></td>
-      <td><div align="center"><a href="the-ai-conference-hack-day-2026/README.md#winners">top 3 of 40</a></div></td>
+      <td><div align="center"><a href="the-ai-conference-hack-day-2026/README.md#overall-winners">top 3 of 40</a></div></td>
     </tr>
     <tr>
       <td><a href="crusoe-cv-recursive-agents-hackathon/">Recursive Agents Hackathon</a> with <a href="https://cerebralvalley.ai/e/crusoe-recursive-agents-hackathon">Cerebral Valley</a></td>
