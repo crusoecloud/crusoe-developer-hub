@@ -37,7 +37,7 @@ llm = CrusoeLLMService(
 
 | Script | What it shows |
 | --- | --- |
-| [`bot.py`](bot.py) | A voice bot with two function-calling tools, runnable on a WebRTC page, Daily, or Twilio through Pipecat's runner |
+| [`bot.py`](bot.py) | A voice bot with two function-calling tools, served on a local WebRTC page through Pipecat's runner |
 
 Run it with the local WebRTC transport and open the printed URL in a browser:
 
@@ -52,6 +52,7 @@ The bot introduces itself, then answers questions about the weather or restauran
 - `CrusoeLLMService` accepts the same `Settings` as Pipecat's OpenAI service: `model`, `temperature`, `max_tokens`, `system_instruction`, and `tools`. Crusoe does not use the `developer` message role, so the service sends system instructions as a `system` message for you.
 - Tools are plain async functions registered through `LLMContext(tools=[...])`; Pipecat builds the schema from the signature and docstring.
 - Set `CRUSOE_MODEL` in `.env` to switch models without editing code. Models with fast time to first token, such as `zai/GLM-5.3-Flash`, `nvidia/Nemotron-3-Nano-30B-A3B`, and `meta-llama/Llama-3.3-70B-Instruct`, keep voice turns snappy.
+- To run the same bot on Daily or Twilio, install the matching `pipecat-ai` extra (`daily` or `websocket`) and add that transport's params class to `transport_params` in `bot.py`.
 - `pipecat init` offers Crusoe as an LLM choice when scaffolding a new project.
 
 [Back to integrations](../README.md)

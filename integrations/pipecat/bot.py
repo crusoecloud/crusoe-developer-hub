@@ -1,6 +1,6 @@
 """A Pipecat voice bot on Crusoe Managed Inference with two function-calling tools.
 
-Run with ``python bot.py -t webrtc`` and open the printed URL. Requires CRUSOE_API_KEY,
+Run with ``python bot.py -t webrtc`` and open the printed URL in a browser. Requires CRUSOE_API_KEY,
 DEEPGRAM_API_KEY, and CARTESIA_API_KEY (see .env.example). Incurs inference and speech charges.
 """
 
@@ -24,8 +24,6 @@ from pipecat.services.crusoe.llm import CrusoeLLMService
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.llm_service import FunctionCallParams
 from pipecat.transports.base_transport import BaseTransport, TransportParams
-from pipecat.transports.daily.transport import DailyParams
-from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams
 from pipecat.workers.runner import WorkerRunner
 
 load_dotenv(override=True)
@@ -50,9 +48,9 @@ async def get_restaurant_recommendation(params: FunctionCallParams, location: st
     await params.result_callback({"name": "The Golden Dragon", "cuisine": "Sichuan"})
 
 
+# Only the WebRTC transport is installed by requirements.txt. To add Daily or Twilio, install the
+# matching pipecat-ai extra and register its params class here (DailyParams, FastAPIWebsocketParams).
 transport_params = {
-    "daily": lambda: DailyParams(audio_in_enabled=True, audio_out_enabled=True),
-    "twilio": lambda: FastAPIWebsocketParams(audio_in_enabled=True, audio_out_enabled=True),
     "webrtc": lambda: TransportParams(audio_in_enabled=True, audio_out_enabled=True),
 }
 

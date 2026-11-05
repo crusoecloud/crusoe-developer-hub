@@ -52,7 +52,7 @@ curl https://api.inference.crusoecloud.com/v1/chat/completions \
 | Script | What it shows |
 | --- | --- |
 | [`client.py`](client.py) | One client, three vLLM-backed features: streaming, JSON-schema guided decoding, and the model catalog |
-| [`portable.py`](portable.py) | The same code against Crusoe or a local `vllm serve`, switched by two environment variables |
+| [`portable.py`](portable.py) | The same code against Crusoe or a local `vllm serve`, switched by three environment variables |
 
 ```bash
 python client.py

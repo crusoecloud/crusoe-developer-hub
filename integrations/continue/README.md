@@ -29,6 +29,7 @@ models:
     apiBase: https://api.inference.crusoecloud.com/v1
     apiKey: ${{ secrets.CRUSOE_API_KEY }}
     roles: [chat]
+    capabilities: [tool_use]
     defaultCompletionOptions:
       reasoningEffort: medium
 ```
