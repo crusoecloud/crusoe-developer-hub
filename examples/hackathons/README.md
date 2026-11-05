@@ -19,7 +19,7 @@ Resources for hackathons Crusoe hosts or sponsors. Each event gets its own folde
     <tr>
       <td><a href="crusoe-cv-recursive-agents-hackathon/">Recursive Agents Hackathon</a> with <a href="https://cerebralvalley.ai/e/crusoe-recursive-agents-hackathon">Cerebral Valley</a></td>
       <td><div align="center">October 17, 2026</div></td>
-      <td><div align="center"><a href="crusoe-cv-recursive-agents-hackathon/projects.md">90 projects</a></div></td>
+      <td><div align="center"><a href="crusoe-cv-recursive-agents-hackathon/projects.md">top 3 of 90</a></div></td>
     </tr>
   </tbody>
 </table>
