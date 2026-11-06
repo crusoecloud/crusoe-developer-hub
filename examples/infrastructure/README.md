@@ -2,7 +2,13 @@
 
 Provision compute, prepare storage, configure networking, and operate clusters for developer workloads. Tasks include checking multi-node communication and mounting shared storage. Kubernetes, VMs, and Slurm can be implementation choices within a task.
 
-**Status: local examples planned.** This section currently links to implementations in the Solutions Library. No provisioning code is stored here yet.
+## Examples in this section
+
+| <div align="center">Task</div> | <div align="center">Example</div> | <div align="center">Prerequisites</div> |
+| --- | --- | --- |
+| Provision a GB200 NVL72 rack with Terraform, then validate IMEX, GEMM, and multi-node NVLink NCCL with Ansible | [GB200 NVL72 validation](gb200-nvl72-validation/) | GB200 capacity in one NVLink domain, Crusoe CLI, Terraform, Ansible |
+
+## Related workflows in the Solutions Library
 
 | <div align="center">Task</div> | <div align="center">Existing implementation in the Solutions Library</div> |
 | --- | --- |

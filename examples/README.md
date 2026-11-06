@@ -4,7 +4,7 @@ Build toward a concrete outcome. Examples are organized by developer task, with 
 
 | <div align="center">Goal</div> | <div align="center">Section</div> | <div align="center">Available now</div> |
 | --- | --- | --- |
-| Provision compute, prepare storage, or operate clusters | [Infrastructure](infrastructure/) | Links to existing solutions; local examples planned |
+| Provision compute, prepare storage, or operate clusters | [Infrastructure](infrastructure/) | [GB200 NVL72 validation with Terraform and Ansible](infrastructure/gb200-nvl72-validation/); links to related solutions |
 | Prepare data, train, fine-tune, or evaluate models | [Training](training/) | [PII redaction notebook](training/pii-redaction/) and [multipart dataset upload notebook](training/multipart-dataset-upload/) |
 | Call models or build a serving workflow | [Inference](inference/) | [MLPerf Inference v6.1 on AMD MI355X](inference/mlperf-inference-amd-mi355x-v6.1/) and [AI Infrastructure SimCity](inference/ai-infrastructure-simcity/); related integrations and serving solutions linked |
 | Follow an end-to-end event session | [Workshop](workshop/) | Planned content |
