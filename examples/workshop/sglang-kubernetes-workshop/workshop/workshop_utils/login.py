@@ -82,6 +82,10 @@ NETWORK_ERRORS = (
     "Client.Timeout",
     "dial tcp",
 )
+#: kubectl's client-side validation first downloads the API server's whole OpenAPI schema (about
+#: 10 MB): on a busy venue network that alone can exceed the 10 s request timeout. The ConfigMap is
+#: generated here, and the API server still validates what it receives.
+NO_CLIENT_VALIDATION = ("--validate=false",)
 UNAUTHORIZED = ("Unauthorized", "must be logged in", "token has expired")
 
 
@@ -335,13 +339,13 @@ class Cluster:
             "data": data,
         })  # fmt: skip
         if exists:
-            p = self.kubectl("replace", "-f", "-", stdin=doc)
+            p = self.kubectl("replace", *NO_CLIENT_VALIDATION, "-f", "-", stdin=doc)
             if p.returncode != 0 and "NotFound" in (p.stderr or ""):  # deleted since we read it
-                p = self.kubectl("create", "-f", "-", stdin=doc, retry=False)
+                p = self.kubectl("create", *NO_CLIENT_VALIDATION, "-f", "-", stdin=doc, retry=False)
         else:
-            p = self.kubectl("create", "-f", "-", stdin=doc, retry=False)
+            p = self.kubectl("create", *NO_CLIENT_VALIDATION, "-f", "-", stdin=doc, retry=False)
             if p.returncode != 0 and "AlreadyExists" in (p.stderr or ""):  # created since we read it
-                p = self.kubectl("replace", "-f", "-", stdin=doc)
+                p = self.kubectl("replace", *NO_CLIENT_VALIDATION, "-f", "-", stdin=doc)
         if p.returncode != 0:
             err = (p.stderr or "").strip()
             hint = (
