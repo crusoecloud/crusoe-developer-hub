@@ -1,0 +1,24 @@
+# local only: venv, caches, notebook checkpoints, build scaffolding (.nbbuild/)
+.*/
+
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# benchmark output written by the notebooks
+results/
+*.jsonl
+
+# facilitator notes
+FACILITATOR.md
+
+.DS_Store
+
+# credentials: never commit kubeconfigs
+kubeconfigs/
+
+# passcode login: never commit the login bundle, passcode cards or rosters (emails)
+*.enc
+cards*.csv
+cards*.html
+roster*.csv

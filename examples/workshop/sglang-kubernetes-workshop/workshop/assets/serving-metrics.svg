@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1220 330" width="1220" height="330" font-family="'Roboto Mono','Menlo','Courier New',monospace" font-size="14">
+  <style>
+    .t { fill: #000; }
+    .small { font-size: 12px; }
+    .tiny { font-size: 11px; }
+    .label { font-size: 12px; fill: #395761; }
+    .axis { stroke: #000; stroke-width: 2; fill: none; marker-end: url(#head); }
+    .brace { stroke: #000; stroke-width: 2; fill: none; }
+    .tick { stroke: #000; stroke-width: 2; }
+    .box { stroke: #000; stroke-width: 2; }
+  </style>
+  <defs>
+    <marker id="head" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#000"/>
+    </marker>
+  </defs>
+
+  <text x="20" y="30" class="label">one request on a timeline: the four numbers every benchmark reports</text>
+
+  <!-- timeline -->
+  <path d="M60,170 L1180,170" class="axis"/>
+  <text x="1185" y="195" text-anchor="end" class="tiny">time</text>
+
+  <!-- request sent -->
+  <path d="M100,150 L100,190" class="tick"/>
+  <text x="100" y="212" text-anchor="middle" class="small">request sent</text>
+
+  <!-- prefill block -->
+  <rect x="100" y="120" width="260" height="50" class="box" fill="#C3D6E7"/>
+  <text x="230" y="150" text-anchor="middle" class="t small">prefill: read the whole prompt</text>
+
+  <!-- first token -->
+  <path d="M360,150 L360,190" class="tick"/>
+  <text x="360" y="212" text-anchor="middle" class="small">first token</text>
+
+  <!-- decode tokens -->
+  <rect x="360" y="120" width="720" height="50" class="box" fill="#CEEB13"/>
+  <text x="720" y="112" text-anchor="middle" class="t small">decode: one new token per step</text>
+  <path d="M450,120 L450,170 M540,120 L540,170 M630,120 L630,170 M720,120 L720,170 M810,120 L810,170 M900,120 L900,170 M990,120 L990,170" stroke="#000" stroke-width="1" stroke-dasharray="3 3"/>
+
+  <!-- last token -->
+  <path d="M1080,150 L1080,190" class="tick"/>
+  <text x="1080" y="212" text-anchor="middle" class="small">last token</text>
+
+  <!-- TTFT brace -->
+  <path d="M100,96 L100,86 L360,86 L360,96" class="brace"/>
+  <text x="230" y="76" text-anchor="middle" class="t">TTFT  time to first token</text>
+
+  <!-- ITL brace -->
+  <path d="M450,96 L450,86 L540,86 L540,96" class="brace"/>
+  <text x="495" y="76" text-anchor="middle" class="t">ITL</text>
+  <text x="640" y="76" class="tiny" fill="#395761">inter-token latency: the gap between two tokens</text>
+
+  <!-- E2E brace -->
+  <path d="M100,250 L100,260 L1080,260 L1080,250" class="brace"/>
+  <text x="590" y="282" text-anchor="middle" class="t">E2E latency  =  TTFT + decode time</text>
+
+  <!-- TPOT box -->
+  <text x="20" y="306" class="small">TPOT  time per output token  =  (E2E latency - TTFT) / (output tokens - 1)</text>
+  <text x="20" y="324" class="small">throughput  =  output tokens per second, summed over all concurrent requests</text>
+</svg>

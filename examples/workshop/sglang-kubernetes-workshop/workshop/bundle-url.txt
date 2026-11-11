@@ -1,0 +1,3 @@
+# The login bundle's URL (login.sh reads it). One URL per line: the first is tried first, the others are
+# mirrors. Lines starting with # are ignored. Until the event day it serves WORKSHOP_NOT_OPEN_YET.
+https://gist.githubusercontent.com/rkalmankar-crusoe/4b9d788616d72ff687b9ac2fb82f8720/raw/bundle.enc

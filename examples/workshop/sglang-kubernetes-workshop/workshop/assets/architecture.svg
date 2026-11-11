@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1220 748" width="1220" height="748" font-family="'Roboto Mono','Menlo','Courier New',monospace" font-size="14">
+  <style>
+    .box { stroke: #000; stroke-width: 2; }
+    .thin { stroke: #000; stroke-width: 1.5; }
+    .hl { stroke: #CEEB13; stroke-width: 4; fill: none; }
+    .t { fill: #000; }
+    .small { font-size: 12px; }
+    .tiny { font-size: 11px; }
+    .label { font-size: 12px; fill: #395761; }
+    .arrow { stroke: #000; stroke-width: 2; fill: none; marker-end: url(#head); }
+    .arrowteal { stroke: #395761; stroke-width: 2; fill: none; stroke-dasharray: 6 5; marker-end: url(#headteal); }
+  </style>
+  <defs>
+    <marker id="head" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#000"/>
+    </marker>
+    <marker id="headteal" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#395761"/>
+    </marker>
+  </defs>
+
+  <!-- laptop, centred on top -->
+  <rect x="400" y="30" width="420" height="88" class="box" fill="#fff"/>
+  <text x="610" y="56" text-anchor="middle" class="t">Your laptop</text>
+  <rect x="420" y="70" width="180" height="28" class="thin" fill="#E4E2E0"/>
+  <text x="510" y="89" text-anchor="middle" class="t small">kubectl apply</text>
+  <rect x="620" y="70" width="180" height="28" class="thin" fill="#E4E2E0"/>
+  <text x="710" y="89" text-anchor="middle" class="t small">notebook, port-forward</text>
+
+  <!-- NVIDIA cluster (left) -->
+  <rect x="30" y="190" width="560" height="510" class="box" fill="#F7F6F5"/>
+  <text x="50" y="216" class="t">Crusoe Managed Kubernetes</text>
+  <text x="570" y="216" text-anchor="end" class="label">NVIDIA cluster</text>
+  <rect x="50" y="232" width="520" height="90" class="box" fill="#fff"/>
+  <text x="70" y="254" class="t small">KServe + Envoy gateway</text>
+  <rect x="70" y="262" width="480" height="22" class="thin" fill="#E4E2E0"/>
+  <text x="310" y="278" text-anchor="middle" class="tiny">LLMInferenceService controller</text>
+  <rect x="70" y="292" width="480" height="22" class="thin" fill="#E4E2E0"/>
+  <text x="310" y="308" text-anchor="middle" class="tiny">storage-initializer: downloads the weights</text>
+
+  <rect x="50" y="346" width="520" height="330" class="box" fill="#fff"/>
+  <rect x="50" y="346" width="520" height="40" class="box" fill="#C3D6E7"/>
+  <text x="310" y="371" text-anchor="middle" class="t">NVIDIA GPU node pool</text>
+  <text x="310" y="408" text-anchor="middle" class="label">pod: qwen3-nvidia</text>
+  <rect x="80" y="420" width="460" height="34" class="thin" fill="#fff"/>
+  <text x="310" y="442" text-anchor="middle" class="t small">init: download Qwen/Qwen3-8B</text>
+  <rect x="80" y="464" width="460" height="66" class="thin" fill="#fff"/>
+  <text x="310" y="487" text-anchor="middle" class="t small">SGLang server :8000</text>
+  <text x="310" y="508" text-anchor="middle" class="tiny">python3 -m sglang.launch_server --tp-size 1</text>
+  <rect x="80" y="464" width="460" height="66" class="hl"/>
+  <text x="310" y="550" text-anchor="middle" class="tiny" fill="#395761">image: lmsysorg/sglang:v0.5.22-runtime</text>
+  <rect x="80" y="564" width="460" height="34" class="thin" fill="#CEEB13"/>
+  <text x="310" y="586" text-anchor="middle" class="t small">nvidia.com/gpu: 1</text>
+  <rect x="80" y="608" width="460" height="34" class="thin" fill="#C3D6E7"/>
+  <text x="310" y="630" text-anchor="middle" class="t small">nodeSelector: nvidia-h100-80gb-sxm-ib</text>
+  <text x="310" y="662" text-anchor="middle" class="tiny" fill="#395761">H100, A100 or L40S</text>
+
+  <!-- AMD cluster (right) -->
+  <rect x="630" y="190" width="560" height="510" class="box" fill="#F7F6F5"/>
+  <text x="650" y="216" class="t">Crusoe Managed Kubernetes</text>
+  <text x="1170" y="216" text-anchor="end" class="label">AMD cluster</text>
+  <rect x="650" y="232" width="520" height="90" class="box" fill="#fff"/>
+  <text x="670" y="254" class="t small">KServe + Envoy gateway</text>
+  <rect x="670" y="262" width="480" height="22" class="thin" fill="#E4E2E0"/>
+  <text x="910" y="278" text-anchor="middle" class="tiny">LLMInferenceService controller</text>
+  <rect x="670" y="292" width="480" height="22" class="thin" fill="#E4E2E0"/>
+  <text x="910" y="308" text-anchor="middle" class="tiny">storage-initializer: downloads the weights</text>
+
+  <rect x="650" y="346" width="520" height="330" class="box" fill="#fff"/>
+  <rect x="650" y="346" width="520" height="40" class="box" fill="#ECAC45"/>
+  <text x="910" y="371" text-anchor="middle" class="t">AMD GPU node pool</text>
+  <text x="910" y="408" text-anchor="middle" class="label">pod: qwen3-amd</text>
+  <rect x="680" y="420" width="460" height="34" class="thin" fill="#fff"/>
+  <text x="910" y="442" text-anchor="middle" class="t small">init: download Qwen/Qwen3-8B</text>
+  <rect x="680" y="464" width="460" height="66" class="thin" fill="#fff"/>
+  <text x="910" y="487" text-anchor="middle" class="t small">SGLang server :8000</text>
+  <text x="910" y="508" text-anchor="middle" class="tiny">python3 -m sglang.launch_server --tp-size 1</text>
+  <rect x="680" y="464" width="460" height="66" class="hl"/>
+  <text x="910" y="550" text-anchor="middle" class="tiny" fill="#395761">image: lmsysorg/sglang:v0.5.22-rocm724-mi35x</text>
+  <rect x="680" y="564" width="460" height="34" class="thin" fill="#CEEB13"/>
+  <text x="910" y="586" text-anchor="middle" class="t small">amd.com/gpu: 1</text>
+  <rect x="680" y="608" width="460" height="34" class="thin" fill="#ECAC45"/>
+  <text x="910" y="630" text-anchor="middle" class="t small">nodeSelector: amd-mi355x-288gb-roce</text>
+  <text x="910" y="662" text-anchor="middle" class="tiny" fill="#395761">MI355X or MI300X</text>
+
+  <!-- arrows: laptop to each control plane (solid), laptop to each pod through the gap (dashed), controller to pool -->
+  <path d="M470,118 L470,160 L310,160 L310,230" class="arrow"/>
+  <path d="M750,118 L750,160 L910,160 L910,230" class="arrow"/>
+  <path d="M610,118 L610,497 L542,497" class="arrowteal"/>
+  <path d="M610,497 L678,497" class="arrowteal"/>
+  <path d="M310,322 L310,344" class="arrow"/>
+  <path d="M910,322 L910,344" class="arrow"/>
+
+  <!-- footer -->
+  <text x="610" y="730" text-anchor="middle" class="label">same manifest, same API, same benchmark. Only the image, the GPU resource and the node label change.</text>
+</svg>
