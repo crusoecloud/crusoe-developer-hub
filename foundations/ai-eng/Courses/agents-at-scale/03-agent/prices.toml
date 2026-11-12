@@ -1,0 +1,36 @@
+date = "not yet filled in; copy from the Serverless Inference pricing page and record the date here"
+
+["zai-org/GLM-5.3"]
+input = 0.0
+cached_input = 0.0
+output = 0.0
+
+["zai-org/GLM-5.3-Flash"]
+input = 0.0
+cached_input = 0.0
+output = 0.0
+
+["deepseek-ai/DeepSeek-V4.1-Flash"]
+input = 0.0
+cached_input = 0.0
+output = 0.0
+
+["nvidia/Nemotron-3.5-Lightning-30B-A3B"]
+input = 0.0
+cached_input = 0.0
+output = 0.0
+
+["Qwen/Qwen3.8-27B"]
+input = 0.0
+cached_input = 0.0
+output = 0.0
+
+["openai/gpt-oss-120b"]
+input = 0.0
+cached_input = 0.0
+output = 0.0
+
+["google/gemma-4-31b-it"]
+input = 0.0
+cached_input = 0.0
+output = 0.0

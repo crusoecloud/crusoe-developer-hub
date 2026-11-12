@@ -1,0 +1,20 @@
+{"id": "t01", "topic": "MemoryAlloy KV cache", "bucket": "typical", "must_mention": ["KV cache", "prefill"]}
+{"id": "t02", "topic": "MCP 2026-07-28 stateless core", "bucket": "typical", "must_mention": ["initialize", "Mcp-Method"]}
+{"id": "t03", "topic": "loop engineering for coding agents", "bucket": "typical", "must_mention": ["stop condition"]}
+{"id": "t04", "topic": "Nemotron 3.5 Lightning architecture", "bucket": "typical"}
+{"id": "t05", "topic": "vLLM prefix caching", "bucket": "typical", "must_mention": ["prefix"]}
+{"id": "t06", "topic": "pass^k reliability metric from tau-bench", "bucket": "typical", "must_mention": ["pass^k"]}
+{"id": "t07", "topic": "FastMCP tool definitions from type hints", "bucket": "typical"}
+{"id": "t08", "topic": "Pydantic AI MCP toolsets", "bucket": "typical"}
+{"id": "t09", "topic": "GLM-5.3 tool calling", "bucket": "typical"}
+{"id": "t10", "topic": "DeepSeek V4.1 Flash context length", "bucket": "typical"}
+{"id": "t11", "topic": "gpt-oss-120b license and context window", "bucket": "hard"}
+{"id": "t12", "topic": "Docker run flags for isolating untrusted code", "bucket": "hard"}
+{"id": "t13", "topic": "Streamable HTTP transport in MCP", "bucket": "hard"}
+{"id": "t14", "topic": "false success in LLM agents: judges on tau2-bench trajectories", "bucket": "regression", "must_mention": ["AUROC"]}
+{"id": "t15", "topic": "tenacity exponential backoff with jitter", "bucket": "regression"}
+{"id": "t16", "topic": "GitHub Actions schedule trigger and cache action", "bucket": "regression"}
+{"id": "t17", "topic": "trafilatura readable text extraction", "bucket": "hard"}
+{"id": "t18", "topic": "OpenTelemetry instrumentation in Pydantic AI", "bucket": "hard"}
+{"id": "t19", "topic": "gVisor and Firecracker as sandbox boundaries", "bucket": "regression"}
+{"id": "t20", "topic": "Crusoe Serverless Inference model deprecation policy", "bucket": "regression"}

@@ -1,0 +1,3 @@
+MemoryAlloy KV cache
+MCP 2026-07-28 stateless core
+Nemotron 3.5 Lightning architecture

@@ -1,0 +1,5 @@
+{"id": "t01", "topic": "MemoryAlloy KV cache", "bucket": "typical", "must_mention": ["KV cache", "prefill"]}
+{"id": "t02", "topic": "MCP 2026-07-28 stateless core", "bucket": "typical", "must_mention": ["initialize", "Mcp-Method"]}
+{"id": "t03", "topic": "loop engineering for coding agents", "bucket": "typical", "must_mention": ["stop condition"]}
+{"id": "t04", "topic": "Nemotron 3.5 Lightning architecture", "bucket": "typical"}
+{"id": "t05", "topic": "vLLM prefix caching", "bucket": "typical", "must_mention": ["prefix"]}

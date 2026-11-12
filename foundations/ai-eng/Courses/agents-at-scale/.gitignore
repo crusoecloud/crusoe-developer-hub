@@ -1,0 +1,14 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+workspace/
+runs/
+state/
+cache/
+results/runs/
+04-evals/results/*.md
+04-evals/results/*.json
+!04-evals/results/.gitkeep
+STOP
+.DS_Store

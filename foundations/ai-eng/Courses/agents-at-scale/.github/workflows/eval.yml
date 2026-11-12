@@ -1,0 +1,14 @@
+name: eval
+on: [pull_request]
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+      - run: uv run python 04-evals/run.py --tasks 04-evals/smoke.jsonl --k 3 --max-usd 1.00 --baseline 04-evals/results/main.json
+        env:
+          CRUSOE_API_KEY: ${{ secrets.CRUSOE_API_KEY }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}

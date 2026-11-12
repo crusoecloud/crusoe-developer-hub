@@ -1,0 +1,21 @@
+[role_model]
+planner    = "crusoe:zai-org/GLM-5.3"
+researcher = "crusoe:nvidia/Nemotron-3.5-Lightning-30B-A3B"
+writer     = "crusoe:zai-org/GLM-5.3"
+verifier   = "crusoe:deepseek-ai/DeepSeek-V4.1-Flash"
+
+[fallbacks]
+planner    = ["crusoe:deepseek-ai/DeepSeek-V4.1-Flash", "crusoe:openai/gpt-oss-120b"]
+researcher = ["crusoe:deepseek-ai/DeepSeek-V4.1-Flash"]
+writer     = ["crusoe:deepseek-ai/DeepSeek-V4.1-Flash", "crusoe:openai/gpt-oss-120b"]
+verifier   = ["crusoe:zai-org/GLM-5.3-Flash"]
+
+[harness]
+compaction_model = "nvidia/Nemotron-3.5-Lightning-30B-A3B"
+judge_model = "zai-org/GLM-5.3-Flash"
+
+[budget]
+max_concurrency = 4
+max_attempts = 3
+max_usd = 2.00
+max_minutes = 40

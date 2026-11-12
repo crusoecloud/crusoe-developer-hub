@@ -1,0 +1,26 @@
+name: nightly-brief
+on:
+  schedule: [{cron: "0 6 * * 1-5"}]
+  issues: {types: [labeled]}
+  workflow_dispatch:
+jobs:
+  brief:
+    if: github.event_name != 'issues' || github.event.label.name == 'brief-request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/cache@v4
+        with: {path: state, key: brief-state-${{ github.run_id }}, restore-keys: brief-state-}
+      - if: github.event_name == 'issues'
+        env:
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+        run: python3 -c 'import os, re; open("07-loops/topics.txt", "a").write(re.sub(r"^brief:\s*", "", os.environ["ISSUE_TITLE"]).strip() + "\n")'
+      - run: uv sync && uv run python 07-loops/loop.py
+        env:
+          CRUSOE_API_KEY: ${{ secrets.CRUSOE_API_KEY }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRIEF_DRY_RUN: "0"
+          BRIEF_REPO: ${{ github.repository }}

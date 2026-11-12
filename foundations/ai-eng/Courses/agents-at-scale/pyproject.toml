@@ -1,0 +1,28 @@
+[project]
+name = "agents-at-scale"
+version = "0.1.0"
+description = "Code for the Agents at Scale (with Open Models) course"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Emmanuel Acheampong", email = "eacheampong@crusoe.ai" }]
+dependencies = [
+    "openai>=1.60",
+    "fastmcp>=2.10",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "pydantic-ai-slim[openai,mcp]>=2.60,<3",
+    "httpx>=0.27",
+    "trafilatura>=2.0",
+    "tenacity>=9.0",
+    "structlog>=24.4",
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
+    "pandas>=2.2",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.3"]
+
+[tool.uv]
+package = false
