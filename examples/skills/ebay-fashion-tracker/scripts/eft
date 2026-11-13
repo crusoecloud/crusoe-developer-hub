@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+"""eft: the command line of the ebay-fashion-tracker skill.
+
+Run as `python3 scripts/eft --json status`. All the logic is in the eft_core package next to
+this file; this launcher only makes that package importable and hands over.
+"""
+import os
+import sys
+
+if sys.version_info < (3, 9):
+    sys.exit("eft needs Python 3.9 or newer; this is Python %d.%d" % sys.version_info[:2])
+
+# realpath, so that a symlink to this file from a bin directory still finds the package.
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+
+from eft_core.cli import main  # noqa: E402
+
+if __name__ == "__main__":
+    sys.exit(main())

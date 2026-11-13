@@ -1,0 +1,21 @@
+# Slack app manifest for ebay-fashion-tracker alerts.
+# Create the app at https://api.slack.com/apps > Create New App > From a manifest,
+# install it to your workspace, then copy:
+#   - the Bot User OAuth Token (xoxb-...)  -> SLACK_BOT_TOKEN
+#   - your own member ID (profile > ... > Copy member ID, U...) -> SLACK_USER_ID
+# The app only sends direct messages to you. It reads nothing.
+display_information:
+  name: eBay Fashion Tracker
+  description: Sends you a direct message when a tracked eBay listing appears.
+features:
+  bot_user:
+    display_name: eft
+    always_online: false
+oauth_config:
+  scopes:
+    bot:
+      - chat:write
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

@@ -1,0 +1,11 @@
+name = "eft-ebay-deletion"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+[vars]
+# The exact URL you give eBay as the notification endpoint. After the first deploy,
+# replace this with the URL wrangler prints, then deploy again.
+ENDPOINT_URL = "https://eft-ebay-deletion.YOUR-SUBDOMAIN.workers.dev"
+
+# VERIFICATION_TOKEN is a secret, not a var:
+#   npx wrangler secret put VERIFICATION_TOKEN

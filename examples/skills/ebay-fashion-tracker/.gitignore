@@ -1,0 +1,17 @@
+# Local secrets. The template, env.example, stays in git
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local state, if EFT_STATE_DIR is pointed inside this folder
+*.db
+*.db-*
+state/
+
+# OS
+.DS_Store

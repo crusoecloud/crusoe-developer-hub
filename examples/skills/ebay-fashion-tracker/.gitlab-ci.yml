@@ -1,0 +1,12 @@
+# stages and PYTHON_VERSION are inherited from the root .gitlab-ci.yml.
+# The tests use the standard library only and make no network calls.
+ebay-fashion-tracker:test:
+  image: python:${PYTHON_VERSION}-slim
+  stage: test
+  rules:
+    - if: '$CI_COMMIT_TAG'
+      when: never
+    - changes: ["examples/skills/ebay-fashion-tracker/**/*"]
+  script:
+    - cd examples/skills/ebay-fashion-tracker
+    - python -m unittest discover -s tests -v

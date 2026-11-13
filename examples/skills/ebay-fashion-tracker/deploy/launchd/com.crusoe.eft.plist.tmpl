@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd user agent for ebay-fashion-tracker: runs `eft tick` on a timer.
+
+  `eft agent install` writes this file to ~/Library/LaunchAgents/com.crusoe.eft.plist with
+  every path filled in as an absolute path. launchd starts jobs with an almost empty
+  environment, so nothing here relies on PATH or on variables exported in a shell: keys
+  are read from the .env file named below.
+
+  The job does not run while the Mac is asleep. After wake it runs on its timer again, and
+  the tick catches up from where the last one stopped.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>{{LABEL}}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{{PYTHON}}</string>
+    <string>{{EFT}}</string>
+    <string>tick</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>{{INTERVAL_SECONDS}}</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>EFT_STATE_DIR</key>
+    <string>{{STATE_DIR}}</string>
+    <key>EFT_ENV_FILE</key>
+    <string>{{ENV_FILE}}</string>
+  </dict>
+  <!-- Each tick's report is kept in the store (see `eft status`). Only errors are logged. -->
+  <key>StandardOutPath</key>
+  <string>/dev/null</string>
+  <key>StandardErrorPath</key>
+  <string>{{LOG}}</string>
+</dict>
+</plist>
