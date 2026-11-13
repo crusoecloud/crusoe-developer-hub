@@ -32,6 +32,7 @@ The included content column describes what is checked into this repository. Thes
 | Code with an AI agent | [OpenCode](opencode/README.md) | Setup guide and `opencode.json` config | OpenCode, Crusoe Inference API key |
 | Code with an AI agent | [Continue](continue/README.md) | `config.yaml` for the chat, edit, and apply roles | Continue, Crusoe Inference API key |
 | Run Codex CLI or Claude Code on Crusoe | [opencodex](opencodex/README.md) | Setup guide for the built-in Crusoe preset | Node.js 20+, Crusoe Inference API key |
+| Run an OpenClaw assistant on Crusoe | [OpenClaw](openclaw/README.md) | Provider plugin source, unit tests, and setup guide | OpenClaw 2026.11.3+, Node.js 24, Crusoe Inference API key |
 | Route through an AI gateway | [Portkey](portkey/README.md) | Gateway headers, SDK client, and a fallback config | Docker or a Portkey account, Crusoe Inference API key |
 | Observe requests and costs | [Helicone](helicone/README.md) | Gateway client with tracing headers | Helicone account, Crusoe Inference API key |
 

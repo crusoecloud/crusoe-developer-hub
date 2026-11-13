@@ -1,0 +1,188 @@
+{
+  "id": "crusoe",
+  "name": "Crusoe",
+  "description": "Add Crusoe models to OpenClaw.",
+  "version": "0.1.0",
+  "providers": [
+    "crusoe"
+  ],
+  "setup": {
+    "providers": [
+      {
+        "id": "crusoe",
+        "envVars": [
+          "CRUSOE_API_KEY"
+        ]
+      }
+    ]
+  },
+  "providerAuthChoices": [
+    {
+      "provider": "crusoe",
+      "method": "api-key",
+      "choiceId": "crusoe-api-key",
+      "choiceLabel": "Crusoe API key",
+      "groupId": "crusoe",
+      "groupLabel": "Crusoe",
+      "groupHint": "API key",
+      "optionKey": "crusoeApiKey",
+      "cliFlag": "--crusoe-api-key",
+      "cliOption": "--crusoe-api-key <key>",
+      "cliDescription": "Crusoe API key"
+    }
+  ],
+  "modelCatalog": {
+    "modelsDev": {
+      "crusoe": "crusoe"
+    },
+    "providers": {
+      "crusoe": {
+        "baseUrl": "https://api.inference.crusoecloud.com/v1",
+        "api": "openai-completions",
+        "defaultModel": "openai/gpt-oss-120b",
+        "models": [
+          {
+            "id": "openai/gpt-oss-120b",
+            "name": "GPT-OSS 120B",
+            "reasoning": true,
+            "thinkingLevelMap": {
+              "off": null,
+              "minimal": null,
+              "xhigh": null,
+              "max": null
+            },
+            "input": [
+              "text"
+            ],
+            "contextWindow": 131072,
+            "maxTokens": 32768,
+            "cost": {
+              "input": 0.05,
+              "output": 0.25,
+              "cacheRead": 0.05,
+              "cacheWrite": 0
+            },
+            "compat": {
+              "supportsUsageInStreaming": true,
+              "supportsPromptCacheKey": true,
+              "supportsStrictMode": false,
+              "supportsReasoningEffort": true,
+              "supportedReasoningEfforts": [
+                "low",
+                "medium",
+                "high"
+              ],
+              "reasoningEffortMap": {
+                "low": "low",
+                "medium": "medium",
+                "high": "high"
+              },
+              "defaultThinkingLevel": "medium"
+            }
+          },
+          {
+            "id": "nvidia/Nemotron-3-Nano-Omni-Reasoning-30B-A3B",
+            "name": "Nemotron 3 Nano Omni 30B A3B Reasoning",
+            "reasoning": true,
+            "thinkingLevelMap": {
+              "minimal": null,
+              "medium": null,
+              "high": null,
+              "xhigh": null,
+              "max": null
+            },
+            "input": [
+              "text",
+              "image"
+            ],
+            "contextWindow": 262144,
+            "maxTokens": 65536,
+            "cost": {
+              "input": 0.3,
+              "output": 1.83,
+              "cacheRead": 0.3,
+              "cacheWrite": 0
+            },
+            "compat": {
+              "supportsUsageInStreaming": true,
+              "supportsPromptCacheKey": true,
+              "supportsStrictMode": false,
+              "supportsReasoningEffort": true,
+              "supportedReasoningEfforts": [
+                "none",
+                "low"
+              ],
+              "reasoningEffortMap": {
+                "off": "none",
+                "low": "low"
+              },
+              "thinkingLevelLabels": {
+                "low": "on"
+              },
+              "defaultThinkingLevel": "low"
+            }
+          },
+          {
+            "id": "google/gemma-4-31b-it",
+            "name": "Gemma 4 31B IT",
+            "reasoning": true,
+            "thinkingLevelMap": {
+              "minimal": null,
+              "medium": null,
+              "high": null,
+              "xhigh": null,
+              "max": null
+            },
+            "input": [
+              "text",
+              "image"
+            ],
+            "contextWindow": 262144,
+            "maxTokens": 32768,
+            "cost": {
+              "input": 0.14,
+              "output": 0.4,
+              "cacheRead": 0.14,
+              "cacheWrite": 0
+            },
+            "compat": {
+              "supportsUsageInStreaming": true,
+              "supportsPromptCacheKey": true,
+              "supportsStrictMode": false,
+              "supportsReasoningEffort": true,
+              "supportedReasoningEfforts": [
+                "none",
+                "low"
+              ],
+              "reasoningEffortMap": {
+                "off": "none",
+                "low": "low"
+              },
+              "thinkingLevelLabels": {
+                "low": "on"
+              },
+              "defaultThinkingLevel": "off"
+            }
+          }
+        ]
+      }
+    },
+    "discovery": {
+      "crusoe": "refreshable"
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "activation": {
+    "onStartup": true,
+    "providers": [
+      "crusoe"
+    ],
+    "capabilities": [
+      "provider"
+    ]
+  }
+}

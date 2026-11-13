@@ -1,0 +1,81 @@
+{
+  "name": "openclaw-plugin-crusoe",
+  "version": "0.1.0",
+  "description": "OpenClaw provider plugin for Crusoe: open-weight models on Crusoe's GPU cloud.",
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "crusoe",
+    "llm",
+    "provider"
+  ],
+  "homepage": "https://github.com/crusoecloud/crusoe-developer-hub/tree/main/integrations/openclaw",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/crusoecloud/crusoe-developer-hub.git",
+    "directory": "integrations/openclaw"
+  },
+  "license": "MIT",
+  "author": "Crusoe AI",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --config ./vitest.config.ts",
+    "validate": "npm run build && clawhub package validate . --out .clawhub-validation"
+  },
+  "files": [
+    "dist",
+    "openclaw.plugin.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "openclaw": ">=2026.11.3"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "clawhub": "latest",
+    "openclaw": "latest",
+    "typescript": "7.0.2",
+    "vitest": "^3.2.0"
+  },
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "compat": {
+      "pluginApi": ">=2026.11.3"
+    },
+    "build": {
+      "openclawVersion": "2026.11.3"
+    },
+    "install": {
+      "clawhubSpec": "clawhub:openclaw-plugin-crusoe",
+      "defaultChoice": "clawhub",
+      "minHostVersion": ">=2026.11.3"
+    },
+    "release": {
+      "publishToClawHub": true
+    }
+  },
+  "pluginInspector": {
+    "version": 1,
+    "plugin": {
+      "id": "crusoe",
+      "priority": "high",
+      "seams": [
+        "plugin-runtime"
+      ],
+      "sourceRoot": ".",
+      "expect": {
+        "registrations": [
+          "registerProvider"
+        ]
+      }
+    }
+  }
+}
