@@ -48,7 +48,9 @@ from .spec import (
     validate_spec,
 )
 from .store import Store, iso, parse_iso
-from .tick import LAST_TICK_KEY, OVERFLOW_KEY, RETRY_KEY, cadence_minutes, run_tick, stored_evidence
+from .tick import (
+    LAST_TICK_KEY, OVERFLOW_KEY, RETRY_KEY, cadence_minutes, run_tick, stored_evidence, window_start,
+)
 
 AGENT_LABEL = "com.crusoe.eft"
 PLIST_TEMPLATE = SKILL_ROOT / "deploy" / "launchd" / (AGENT_LABEL + ".plist.tmpl")
@@ -56,6 +58,8 @@ LAUNCHER = SKILL_ROOT / "scripts" / "eft"
 LAUNCHCTL = "/bin/launchctl"
 REFERENCE_NAME = re.compile(r"[0-9a-f]{12}(\..*)?", re.DOTALL)
 DEFAULT_INTERVAL_MINUTES = 5
+# Where no agent can be looked for (anywhere but macOS), a poll this long ago means the poller is not running.
+POLL_OVERDUE = timedelta(hours=1)
 LOCK_FILE = "tick.lock"
 LOG_FILE = "tick.log"
 
@@ -75,6 +79,8 @@ SETTABLE = ("size", "department", "kids_tier", "price_ceiling", "brand", "model"
             "must_not", "must_have", "strictness")
 LIST_SETTINGS = ("style_codes", "must_not", "must_have")
 PATCH_KEYS = ("set", "add_must_not", "add_must_have", "add_nicknames", "set_requirement")
+# What a model fills in for a draft, besides the style codes, which have a check of their own.
+DRAFT_FIELDS = ("brand", "model", "colorway", "size", "department", "kids_tier", "visual_signature")
 
 
 class Problem(Exception):
@@ -91,6 +97,14 @@ class Output:
     data: Dict[str, Any]
     text: str
     code: int = 0
+
+
+def state_problem(settings: Settings, problem: Exception) -> Problem:
+    """What to say when the state directory cannot be created, written or opened."""
+    return Problem(
+        "cannot open the state directory %s (%s). Point EFT_STATE_DIR at a directory this shell "
+        "can write to; `eft doctor env` shows what is set." % (settings.state_dir, problem.__class__.__name__)
+    )
 
 
 def run_command(arguments: Sequence[str]) -> Tuple[int, str]:
@@ -145,11 +159,7 @@ class Runtime:
                 self.settings.ensure_state_dir()
                 self._store = Store(self.settings.db_path)
             except (OSError, sqlite3.Error) as problem:
-                raise Problem(
-                    "cannot open the state directory %s (%s). Point EFT_STATE_DIR at a directory this shell "
-                    "can write to; `eft doctor env` shows what is set."
-                    % (self.settings.state_dir, problem.__class__.__name__)
-                )
+                raise state_problem(self.settings, problem)
         return self._store
 
     @property
@@ -189,6 +199,9 @@ class Runtime:
 # ---- small helpers -------------------------------------------------------------
 
 def _find_watch(store: Store, ref: str) -> Dict[str, Any]:
+    if not str(ref).strip():
+        # An empty shell variable, most likely. It must not pick out "the only watch there is".
+        raise UsageError("a watch id or name is needed; an empty one was given")
     watch = store.find_watch(ref)
     if watch is None:
         raise Problem("no watch matches %r; `eft watch list` shows them" % ref)
@@ -219,6 +232,27 @@ def model_words(text: Any) -> str:
     text could be talked into writing one, so anything that looks like a link is removed.
     """
     return _short(_LINK_RE.sub("[link removed]", str(text or "")), MODEL_WORDS_CHARS)
+
+
+def _has_link(value: Any) -> bool:
+    return isinstance(value, str) and _LINK_RE.search(value) is not None
+
+
+def without_links(value: Any) -> Any:
+    """The values a model filled in, minus every one that holds a link.
+
+    A brand, a size or a must-not term has no reason to hold a link. One that does was most
+    likely steered by the text the model read, so it is not cleaned up but left out: a list
+    loses the item and a dict loses the entry. These values become the watch's name, its spec
+    and the heading of its cards, where the rule is the same as for a sentence: the only
+    links shown come from the eBay API.
+    """
+    if isinstance(value, list):
+        return [without_links(item) for item in value if not _has_link(item)]
+    if isinstance(value, dict):
+        return {key: without_links(item) for key, item in value.items()
+                if not (_has_link(key) or _has_link(item))}
+    return value
 
 
 def listing_view(listing: Optional[Mapping[str, Any]], as_of: Optional[str], now: datetime) -> Dict[str, Any]:
@@ -279,22 +313,44 @@ def untrack(store: Store, candidate: Mapping[str, Any], state: str, reason: str)
         store.kv_delete(RETRY_KEY % candidate["id"])
 
 
-def _cards_showing_data(store: Store, candidate_id: int) -> List[Dict[str, Any]]:
-    return [message for message in store.messages_for_candidate(candidate_id) if message["has_listing_data"]]
+def _cards_to_rewrite(store: Store, candidate_id: int) -> List[Dict[str, Any]]:
+    """The sent messages of a listing that still say something about it.
+
+    `has_listing_data` alone does not tell. It goes to 0 when a card is stripped at six
+    hours, but that stub keeps the listing's title and link. Only the "Ended" rewrite takes
+    those off a Slack message, and the record of it is the alert's stored payload, which is
+    of kind "ended" from then on. A rewrite that failed puts the flag back to 1.
+    """
+    waiting = []
+    for message in store.messages_for_candidate(candidate_id):
+        alert = store.get_alert(message["alert_id"])
+        ended = alert is not None and alert["payload"].get("kind") == "ended"
+        if message["has_listing_data"] or (message["channel"] == "slack" and not ended):
+            waiting.append(message)
+    return waiting
 
 
 def strip_cards(rt: Runtime, candidates: Sequence[Mapping[str, Any]]) -> int:
-    """Rewrite the sent messages of these listings so that none shows listing data any more.
+    """Rewrite the sent messages of these listings so that none says anything about them any more.
 
-    Returns how many messages could not be rewritten (Slack unreachable, for example). Those
-    still have their rows, so the poller strips them at six hours like any other card.
+    For when a listing stops being tracked or its rows are about to be deleted: afterwards
+    nothing would know where its messages are. Returns how many could not be rewritten (Slack
+    unreachable, for example). Those rows stay due, and the poller tries them again on every
+    run for as long as they exist.
     """
     left = 0
     for candidate in candidates:
-        if _cards_showing_data(rt.store, candidate["id"]):
+        if _cards_to_rewrite(rt.store, candidate["id"]):
             rt.notifier.mark_ended(candidate["id"])
-            left += len(_cards_showing_data(rt.store, candidate["id"]))
+            left += len(_cards_to_rewrite(rt.store, candidate["id"]))
     return left
+
+
+def _cards_left_note(left: int) -> List[str]:
+    """What to say when the card of a listing that is no longer tracked could not be rewritten."""
+    if not left:
+        return []
+    return ["%d sent message(s) could not be rewritten just now; the poller rewrites them on its next run" % left]
 
 
 def settle_requirements(old: Mapping[str, Any], new: Dict[str, Any], explicit: Set[str]) -> Dict[str, Any]:
@@ -365,6 +421,24 @@ def _plist_path() -> Path:
     return Path.home() / "Library" / "LaunchAgents" / (AGENT_LABEL + ".plist")
 
 
+def _poller_step(rt: Runtime) -> Optional[str]:
+    """What is still to do before `eft tick` runs by itself, or None when it looks like it does.
+
+    On macOS the agent's plist says so. Anywhere else the poller is a cron line or a systemd
+    timer that the user adds, which this tool cannot see: there the evidence is the last
+    poll itself, and one that is missing or over an hour old means nothing is running it.
+    """
+    if rt.platform == "darwin":
+        return None if _plist_path().exists() else "Start the background poller: eft agent install"
+    last = rt.store.kv_get(LAST_TICK_KEY) or {}
+    polled = parse_iso(last.get("at"))
+    if polled is not None and rt.store.clock() - polled <= POLL_OVERDUE:
+        return None
+    when = "since %s" % last["at"] if polled else "yet"
+    return ("No poll has run %s. Nothing runs the poller here until its line is in your crontab (or a systemd "
+            "timer): eft agent install prints it" % when)
+
+
 def _waiting_steps(rt: Runtime, watches: Sequence[Mapping[str, Any]]) -> List[str]:
     """Setup steps that are still open, in the order to do them."""
     settings, steps = rt.settings, []
@@ -382,9 +456,9 @@ def _waiting_steps(rt: Runtime, watches: Sequence[Mapping[str, Any]]) -> List[st
     drafts = [str(watch["id"]) for watch in watches if watch["status"] == "draft"]
     if drafts:
         steps.append("Draft watches waiting to be activated: %s" % ", ".join(drafts))
-    active = any(watch["status"] == "active" for watch in watches)
-    if active and rt.platform == "darwin" and not _plist_path().exists():
-        steps.append("Start the background poller: eft agent install")
+    poller = _poller_step(rt) if any(watch["status"] == "active" for watch in watches) else None
+    if poller:
+        steps.append(poller)
     return steps
 
 
@@ -460,20 +534,29 @@ def read_draft(rt: Runtime, role: str, prompt: prompts.Prompt, texts: Sequence[s
     The model's own questions for the user are passed on, except when it was reading a
     seller's listing (`from_listing`): free text written under the influence of seller text
     is not shown to the user.
+
+    The fields are not free text, but they are still a model's words about text from outside,
+    and they end up in the watch's name, in its spec and on its cards. A value that holds a
+    link is left out and reported by field name, whatever the draft was read from.
     """
     system, parts, required = prompt
-    data = rt.crusoe.chat_json(role, system, parts, required=required, validator=prompts.validate_draft).data
+    answer = rt.crusoe.chat_json(role, system, parts, required=required, validator=prompts.validate_draft).data
     read = list(texts)
     if role == "extract":
-        read += [str(text) for text in data.get("visible_text") or []]
+        read += [str(text) for text in answer.get("visible_text") or []]
+    said = {name: answer.get(name) for name in DRAFT_FIELDS + ("style_codes",)}
+    data = without_links(said)
     offered = [str(code).strip() for code in data.get("style_codes") or [] if str(code).strip()]
     kept = prompts.stated_codes(offered, read)
-    fields = {name: data.get(name) for name in ("brand", "model", "colorway", "size", "department", "kids_tier",
-                                                  "visual_signature")}
+    fields = {name: data.get(name) for name in DRAFT_FIELDS}
     fields["style_codes"] = kept
     notes = ["style code %s was left out: it does not appear in the text that was read" % code
              for code in offered if code not in kept]
-    asked = [] if from_listing else data.get("questions") or []
+    with_links = [name for name in said if data.get(name) != said[name]]
+    if with_links:
+        notes.append("left out of the draft, because what the model wrote there held a link: %s"
+                     % ", ".join(with_links))
+    asked = [] if from_listing else answer.get("questions") or []
     questions = [model_words(question) for question in asked if isinstance(question, str) and question.strip()]
     return Draft(fields, questions, notes)
 
@@ -590,9 +673,14 @@ def _open_questions(spec: Mapping[str, Any]) -> List[str]:
 
 
 def cmd_add(rt: Runtime, args: argparse.Namespace) -> Output:
-    if args.image:
+    for option in ("image", "text", "url"):
+        value = getattr(args, option)
+        if value is not None and not value.strip():
+            raise UsageError("--%s needs a value; an empty one was given" % option)
+    # Exactly one of the three is set (the parser sees to that), and none of them is empty.
+    if args.image is not None:
         draft = _draft_from_image(rt, args.image, args.note or "")
-    elif args.text:
+    elif args.text is not None:
         draft = _draft_from_text(rt, args.text)
     else:
         draft = _draft_from_url(rt, args.url)
@@ -721,13 +809,25 @@ def cmd_watch_activate(rt: Runtime, args: argparse.Namespace) -> Output:
         raise Problem("watch %d cannot be activated yet: %s" % (watch["id"], "; ".join(problems)))
     rt.settings.require("ebay")
     plan = build_plan(spec, rt.ebay)
-    store.update_watch(watch["id"], status="active", spec=spec, plan=plan, window_end=store.now_iso())
+    changes: Dict[str, Any] = {"status": "active", "spec": spec, "plan": plan}
+    notes = []
+    # A watch that has never been searched starts its window now. One that has keeps the window
+    # it stopped at, so that what was listed while it was paused is searched as well;
+    # `window_start` limits how far back that goes.
+    if not watch["last_search_at"]:
+        changes["window_end"] = store.now_iso()
+    elif watch["status"] == "paused":
+        notes.append("the next search goes back to %s, to cover what was listed while the watch was paused"
+                     % iso(window_start(watch, store.clock())))
+    store.update_watch(watch["id"], **changes)
     active = store.list_watches(status="active")
     hot = sum(1 for row in active if row["tier"] == "hot")
     cadence = cadence_minutes(hot, len(active) - hot, rt.settings.ebay_daily_cap)
-    notes = []
     if not (rt.settings.has("slack") or rt.settings.has("pushover")):
         notes.append("no alert channel is configured yet, so alerts will wait in the outbox")
+    poller = _poller_step(rt)
+    if poller:
+        notes.append(poller)
     data = {"watch": {"id": watch["id"], "name": watch["name"], "status": "active"}, "plan": plan,
             "search_every_minutes": cadence, "notes": notes}
     lines = ["watch %d is active: searching for \"%s\" every %d minutes"
@@ -773,7 +873,7 @@ def cmd_watch_remove(rt: Runtime, args: argparse.Namespace) -> Output:
                 if candidate["tracked"]:
                     untrack(store, candidate, "ended", "watch_removed")
         raise Problem("watch %d is paused and its listing data is deleted, but %d sent message(s) could not be "
-                      "rewritten just now. The poller strips them within six hours; run this command again "
+                      "rewritten just now. The poller rewrites them on its next run; run this command again "
                       "after that to finish removing the watch." % (watch["id"], left))
     _delete_reference_images(rt.settings, watch["spec"])
     with store.transaction():
@@ -848,9 +948,15 @@ def tick_lock(settings: Settings) -> Iterator[bool]:
     """Hold the poller's lock for the length of one tick. Yields False when another tick has it.
 
     The agent and a hand-run `eft tick` must not overlap: both would deliver the same outbox.
+    The lock file is the first thing a tick writes, so this is also where a state directory
+    that cannot be written shows up, as the same handled problem every other command reports.
     """
-    settings.ensure_state_dir()
-    with open(str(settings.state_dir / LOCK_FILE), "w") as handle:
+    try:
+        settings.ensure_state_dir()
+        handle = open(str(settings.state_dir / LOCK_FILE), "w")
+    except OSError as problem:
+        raise state_problem(settings, problem)
+    with handle:
         try:
             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
@@ -860,10 +966,19 @@ def tick_lock(settings: Settings) -> Iterator[bool]:
 
 
 def cmd_tick(rt: Runtime, args: argparse.Namespace) -> Output:
+    """Run one poll and report it.
+
+    The report goes to standard output, which the background agent throws away, and the store
+    keeps only the latest one. So each problem is also written to standard error with the
+    time of the poll: that is the agent's log, and the only lasting record of a problem that
+    was gone again by the next poll.
+    """
     with tick_lock(rt.settings) as free:
         if not free:
             return Output({"skipped": "another eft tick is running"}, "another eft tick is running; nothing done")
         report = run_tick(rt.settings, rt.store, rt.ebay, rt.crusoe, rt.notifier, transport=rt.transport)
+    for problem in report["problems"]:
+        print("%s %s" % (report["at"], problem), file=sys.stderr)
     decisions = ", ".join("%d %s" % (count, name) for name, count in sorted(report["decisions"].items()))
     delivery = report["delivery"]
     lines = [
@@ -953,7 +1068,18 @@ def replay(store: Store, watch: Mapping[str, Any],
 
 
 def _patch_changes(patch: Mapping[str, Any]) -> Dict[str, Any]:
-    return {key: patch[key] for key in PATCH_KEYS if patch.get(key)}
+    """The changes a patch makes, without any term that holds a link.
+
+    A patch is written by a model that has read a listing's title. Its terms are printed,
+    stored and, once the user agrees, made part of the spec.
+    """
+    given = {key: patch.get(key) for key in PATCH_KEYS}
+    cleaned = without_links(given)
+    if isinstance(given["set"], dict):
+        # A field is replaced whole or not at all: a colorway with a hole in it was never proposed.
+        cleaned["set"] = {name: value for name, value in given["set"].items()
+                          if name in cleaned["set"] and cleaned["set"][name] == value}
+    return {key: value for key, value in cleaned.items() if value}
 
 
 def _patched_spec(old: Mapping[str, Any], patch: Mapping[str, Any]) -> Dict[str, Any]:
@@ -961,7 +1087,11 @@ def _patched_spec(old: Mapping[str, Any], patch: Mapping[str, Any]) -> Dict[str,
 
 
 def _feedback_new(rt: Runtime, code: str, reason: str) -> Output:
-    """Record "not a match", then ask a model what change to the spec would have avoided it."""
+    """Record "not a match", then ask a model what change to the spec would have avoided it.
+
+    The listing's cards are rewritten at once. Its row goes in two weeks, and from then on
+    nothing would know where they are.
+    """
     store = rt.store
     candidate = _find_candidate(store, code)
     watch = store.get_watch(candidate["watch_id"])
@@ -970,6 +1100,7 @@ def _feedback_new(rt: Runtime, code: str, reason: str) -> Output:
     spec = normalize_spec(watch["spec"])
     title = (candidate["listing"] or {}).get("title") or ""
     untrack(store, candidate, "rejected", "user_feedback")
+    left = strip_cards(rt, [candidate])
     system, parts, required = prompts.feedback(spec, reason, title)
     try:
         answer = rt.crusoe.chat_json("parse", system, parts, required=required, validator=prompts.validate_patch)
@@ -987,8 +1118,9 @@ def _feedback_new(rt: Runtime, code: str, reason: str) -> Output:
         "patch": changes, "explanation": patch["explanation"],
         "would_remove": [row["code"] for row in removed], "would_keep": [row["code"] for row in kept],
         "apply_with": "eft feedback --apply %d" % feedback_id if changes else None,
+        "messages_left": left,
     }
-    lines = ["%s is marked as not a match and is no longer tracked" % candidate["code"]]
+    lines = ["%s is marked as not a match and is no longer tracked" % candidate["code"]] + _cards_left_note(left)
     if changes:
         lines += ["proposed change to watch %d: %s" % (watch["id"], json.dumps(changes, sort_keys=True)),
                   patch["explanation"],
@@ -1028,11 +1160,14 @@ def _feedback_apply(rt: Runtime, feedback_id: int) -> Output:
         # The feedback table is a log: the approval is its own row, which also stops a second apply.
         store.add_feedback("patch_applied", watch["id"], row["candidate_code"], applied, spec_patch=patch,
                            approved=True)
+    # Once the change is in: the cards of the listings it dropped go the way of a rejected one's.
+    left = strip_cards(rt, removed)
     data = {"applied": feedback_id, "watch": {"id": watch["id"], "name": watch["name"]},
             "summary": spec_summary(spec), "spec": spec,
-            "removed": [candidate["code"] for candidate in removed], "kept": [candidate["code"] for candidate in kept]}
+            "removed": [candidate["code"] for candidate in removed], "kept": [candidate["code"] for candidate in kept],
+            "messages_left": left}
     lines = ["applied the change from feedback %d to watch %d" % (feedback_id, watch["id"]), data["summary"],
-             "removed %d tracked listing(s), kept %d" % (len(removed), len(kept))]
+             "removed %d tracked listing(s), kept %d" % (len(removed), len(kept))] + _cards_left_note(left)
     return Output(data, "\n".join(lines))
 
 
@@ -1095,12 +1230,15 @@ def render_plist(settings: Settings, interval_minutes: int) -> str:
     """Fill in the launchd template with absolute paths and check that the result is a valid plist.
 
     launchd starts the job with an almost empty environment, so the Python that is running
-    now, the launcher, the state directory and the .env file are all written in full.
+    now, the launcher, the state directory and the .env file are all written in full. Its
+    working directory would be `/`; it is set to the skill folder, which is what a relative
+    path in a setting is read against.
     """
     values = {
         "LABEL": AGENT_LABEL,
         "PYTHON": os.path.abspath(sys.executable),
         "EFT": str(LAUNCHER),
+        "SKILL_ROOT": os.path.abspath(str(settings.skill_root)),
         "INTERVAL_SECONDS": str(interval_minutes * 60),
         "STATE_DIR": os.path.abspath(str(settings.state_dir)),
         "ENV_FILE": os.path.abspath(str(settings.env_file)),
@@ -1113,9 +1251,27 @@ def render_plist(settings: Settings, interval_minutes: int) -> str:
     return text
 
 
+def _cron_schedule(interval_minutes: int) -> str:
+    """The five time fields of a crontab line that runs every `interval_minutes`.
+
+    Cron has no "every N minutes": a step starts again at the top of each hour, or of each
+    day. `*/45` runs at :00 and :45, and 90 minutes cannot be written at all. So only an
+    interval that comes out even is accepted: minutes that divide an hour, or whole hours
+    that divide a day.
+    """
+    hours, minutes = divmod(interval_minutes, 60)
+    if hours == 0 and 60 % minutes == 0:
+        return "*/%d * * * *" % minutes
+    if minutes == 0 and 24 % hours == 0:
+        return "0 %s * * *" % {1: "*", 24: "0"}.get(hours, "*/%d" % hours)
+    raise UsageError("a crontab line cannot run every %d minutes. Use minutes that divide an hour (1, 2, 3, 4, 5, "
+                     "6, 10, 12, 15, 20, 30), or whole hours that divide a day (60, 120, 180, 240, 360, 480, 720, "
+                     "1440); a systemd timer can do any interval" % interval_minutes)
+
+
 def _cron_line(settings: Settings, interval_minutes: int) -> str:
     """The crontab entry that runs the poller where there is no launchd."""
-    every = "*/%d * * * *" % interval_minutes if interval_minutes < 60 else "0 */%d * * *" % (interval_minutes // 60)
+    every = _cron_schedule(interval_minutes)
     state_dir = os.path.abspath(str(settings.state_dir))
     return "%s EFT_STATE_DIR=%s EFT_ENV_FILE=%s %s %s tick >/dev/null 2>>%s" % (
         every, shlex.quote(state_dir), shlex.quote(os.path.abspath(str(settings.env_file))),
@@ -1240,6 +1396,11 @@ def cmd_uninstall(rt: Runtime, args: argparse.Namespace) -> Output:
               "delete the deletion-notice Worker (npx wrangler delete) and the Slack app"]
     if left:
         manual.insert(0, "delete %d Slack message(s) that could not be rewritten and still show listing details" % left)
+    if rt.platform != "darwin":
+        # Nothing here can see a crontab. A line left in it would go on running `eft tick`,
+        # which starts again with an empty state directory.
+        manual.insert(0, "remove the `eft tick` line from your crontab or systemd timer, if you added one: left in "
+                         "place it keeps polling and creates %s again" % settings.state_dir)
     data = {"agent_removed": agent_removed, "store_wiped": True, "state_dir": str(settings.state_dir),
             "state_dir_removed": directory_removed, "messages_left": left, "manual_steps": manual}
     lines = ["all stored data is deleted" + (" and %s is removed" % settings.state_dir if directory_removed else
@@ -1250,7 +1411,8 @@ def cmd_uninstall(rt: Runtime, args: argparse.Namespace) -> Output:
 # ---- the parser ----------------------------------------------------------------
 
 def build_parser() -> argparse.ArgumentParser:
-    # --json is accepted before the command and after it. The second form must not reset the first.
+    # --json is accepted before the command, after it, and between a command group and its action.
+    # A later parser must not reset what an earlier one read, hence no default here.
     shared = argparse.ArgumentParser(add_help=False)
     shared.add_argument("--json", action="store_true", default=argparse.SUPPRESS,
                         help="print one JSON document instead of text")
@@ -1280,7 +1442,7 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument("--note", help="what the user said about the photo")
     add.add_argument("--name", help="a name for the watch")
 
-    watch = commands.add_parser("watch", help="list, change, activate, pause or remove watches")
+    watch = commands.add_parser("watch", parents=[shared], help="list, change, activate, pause or remove watches")
     actions = watch.add_subparsers(dest="action", metavar="ACTION")
     actions.required = True
     command(actions, "list", cmd_watch_list, "all watches")
@@ -1316,7 +1478,7 @@ def build_parser() -> argparse.ArgumentParser:
     feedback.add_argument("--reason", help="why it is not a match, in the user's words")
     feedback.add_argument("--apply", type=int, metavar="FEEDBACK_ID", help="apply a change proposed earlier")
 
-    agent = commands.add_parser("agent", help="the background job that runs `eft tick`")
+    agent = commands.add_parser("agent", parents=[shared], help="the background job that runs `eft tick`")
     agent_actions = agent.add_subparsers(dest="action", metavar="ACTION")
     agent_actions.required = True
     install = command(agent_actions, "install", cmd_agent_install, "install and load the launchd user agent")

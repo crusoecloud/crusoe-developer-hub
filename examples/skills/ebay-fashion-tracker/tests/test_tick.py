@@ -1426,6 +1426,56 @@ class Allowance(TickTest):
         self.assertEqual(self.reads_made()["%d:refresh" % watch["id"]], 13)
         self.assertGreater(self.candidate()["next_refresh_at"], row["next_refresh_at"])
 
+    def test_an_ending_reminder_does_not_wait_for_a_watch_that_has_made_its_refreshes(self):
+        watch = self.watch(tier="hot")
+        ends = self.clock() + timedelta(hours=3)
+        self.ebay.list(auction(ends_at=iso(ends)))
+        self.tick()
+        row = self.candidate()
+        self.store.ledger_add("ebay_watch", "%d:refresh" % watch["id"], 12)   # the day's refreshes are used
+        self.clock.advance(hours=1)                       # two hours to go: the hourly read waits
+        report = self.tick()
+        self.assertEqual((self.ebay.reads("refresh"), report["allowance_spent"]), ([], [watch["id"]]))
+
+        self.clock.advance(minutes=65)                    # 55 minutes to go
+        self.tick()
+        self.assertEqual(len(self.ebay.reads("refresh")), 1, "the read the 60-minute reminder waits on")
+        for _ in range(8):                                # 50 down to 15 minutes to go: no alert waits on a read
+            self.clock.advance(minutes=5)
+            self.assertEqual(self.tick()["allowance_spent"], [watch["id"]])
+        self.assertEqual(len(self.ebay.reads("refresh")), 1)
+        self.clock.advance(minutes=7)                     # 8 minutes to go
+        self.tick()
+        self.clock.advance(minutes=5)                     # 3 minutes to go, and its reminder is already out
+        self.tick()
+        self.assertEqual(len(self.ebay.reads("refresh")), 2, "one read for each reminder, and no more")
+        self.assertEqual(sorted((alert["dedupe_key"], alert["status"]) for alert in self.alerts("ending")),
+                         [("ending10:%d" % row["id"], "sent"), ("ending60:%d" % row["id"], "sent")])
+        self.assertEqual(self.reads_made()["%d:refresh" % watch["id"]], 14, "both are counted")
+
+    def test_an_auction_nobody_singled_out_waits_like_any_other_listing(self):
+        watch = self.watch()
+        self.ebay.list(auction(ends_at=iso(self.clock() + timedelta(hours=1, minutes=30))))
+        self.tick()
+        self.store.ledger_add("ebay_watch", "%d:refresh" % watch["id"], 12)
+        for _ in range(17):                               # through its last hour, to five minutes to go
+            self.clock.advance(minutes=5)
+            self.tick()
+        self.assertEqual((self.ebay.reads("refresh"), self.alerts("ending")), ([], []))
+
+    def test_listings_with_no_end_date_are_read_in_turn_when_a_days_refreshes_do_not_cover_them(self):
+        self.watch()
+        self.ebay.list(*[detail(n) for n in range(1, 15)])            # fourteen, none with an end date
+        self.tick()
+        self.clock.advance(hours=6, minutes=1)            # 00:01 UTC: all fourteen are due
+        self.tick()
+        self.clock.advance(days=1)                        # 00:01 UTC the day after: all are due again
+        self.tick()
+        read = [item_id for item_id, _ in self.ebay.reads("refresh")]
+        self.assertEqual(read[:12], ["v1|%d|0" % n for n in range(1, 13)], "twelve on the first day")
+        self.assertEqual(read[12:], ["v1|%d|0" % n for n in (13, 14) + tuple(range(1, 11))],
+                         "the two that waited go first on the second")
+
     def test_the_days_call_cap_is_still_told_apart_from_a_watchs_allowance(self):
         watch = self.watch()
         self.ebay.list(detail(1), detail(2))

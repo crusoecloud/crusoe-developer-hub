@@ -297,8 +297,14 @@ class Store:
         return self._one("SELECT * FROM watch WHERE id = ?", (watch_id,))
 
     def find_watch(self, ref: Union[int, str]) -> Optional[Dict[str, Any]]:
-        """Look a watch up by id, exact name, or unique name fragment (case-insensitive)."""
+        """Look a watch up by id, exact name, or unique name fragment (case-insensitive).
+
+        An empty reference names no watch. As a fragment it would be part of every name, and
+        so would pick out the only watch of a store that has one.
+        """
         text = str(ref).strip()
+        if not text:
+            return None
         if text.isdigit():
             found = self.get_watch(int(text))
             if found:
@@ -412,11 +418,16 @@ class Store:
         return self._all("SELECT * FROM candidate%s ORDER BY id" % where, params)
 
     def due_for_refresh(self, now: Optional[datetime] = None) -> List[Dict[str, Any]]:
-        """Tracked candidates whose refresh time has come, soonest-ending first."""
+        """Tracked candidates whose refresh time has come, soonest-ending first.
+
+        Among listings that end together or have no end date, the one that has waited
+        longest comes first. A caller that cannot read them all then reads them in turn,
+        instead of the same ones every time.
+        """
         cutoff = iso(now or self.clock())
         return self._all(
             "SELECT * FROM candidate WHERE tracked = 1 AND next_refresh_at IS NOT NULL AND next_refresh_at <= ?"
-            " ORDER BY (end_at IS NULL), end_at, id",
+            " ORDER BY (end_at IS NULL), end_at, next_refresh_at, id",
             (cutoff,),
         )
 

@@ -42,6 +42,11 @@ class Watches(unittest.TestCase):
         self.store.delete_watch(watch_id)
         self.assertIsNone(self.store.get_watch(watch_id))
 
+    def test_an_empty_reference_finds_no_watch_even_when_there_is_only_one(self):
+        self.store.create_watch("Panda Dunks 10", SPEC)
+        for empty in ("", "   "):
+            self.assertIsNone(self.store.find_watch(empty), "an empty fragment is part of every name")
+
 
 class Candidates(unittest.TestCase):
     def setUp(self):
@@ -108,6 +113,18 @@ class Candidates(unittest.TestCase):
         due = [c["item_id"] for c in self.store.due_for_refresh()]
         self.assertEqual(due, ["soon", "late"])
         self.assertTrue(late["tracked"] and soon["tracked"])
+
+    def test_due_for_refresh_puts_the_longest_overdue_first_among_listings_with_no_end(self):
+        now = self.clock()
+        for item_id, minutes_overdue in (("read lately", 5), ("waited a day", 1440), ("waited an hour", 60)):
+            self.store.upsert_candidate(
+                self.watch_id, item_id, "alerted", tracked=True,
+                next_refresh_at=iso(now - timedelta(minutes=minutes_overdue)))
+        self.store.upsert_candidate(
+            self.watch_id, "ends", "alerted", tracked=True,
+            next_refresh_at=iso(now - timedelta(minutes=1)), end_at=iso(now + timedelta(days=3)))
+        due = [c["item_id"] for c in self.store.due_for_refresh()]
+        self.assertEqual(due, ["ends", "waited a day", "waited an hour", "read lately"])
 
     def test_purge_listing_data_removes_content_and_evidence(self):
         candidate = self.store.upsert_candidate(

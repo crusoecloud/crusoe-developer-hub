@@ -21,6 +21,10 @@
     <string>{{EFT}}</string>
     <string>tick</string>
   </array>
+  <!-- Without this the job runs in "/". The skill folder is the directory that a relative
+       path in a setting is read against. -->
+  <key>WorkingDirectory</key>
+  <string>{{SKILL_ROOT}}</string>
   <key>StartInterval</key>
   <integer>{{INTERVAL_SECONDS}}</integer>
   <key>RunAtLoad</key>

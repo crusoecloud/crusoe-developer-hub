@@ -25,7 +25,9 @@ still runs.
 
 Each watch has a daily allowance of eBay calls besides its searches. When it is used up, the
 watch's refreshes and its new listings wait for the next UTC day, soonest-ending first. That
-is not a problem, so it is reported apart, under "allowance_spent".
+is not a problem, so it is reported apart, under "allowance_spent". The one kind of read
+that does not wait is the one an alert waits on: the read before a held alert goes out, and
+the read behind an "ending soon" reminder.
 """
 from __future__ import annotations
 
@@ -105,6 +107,7 @@ LAST_HOUR = timedelta(hours=1)
 RETRY_DELAYS = (timedelta(hours=1), timedelta(hours=6), timedelta(hours=24), timedelta(hours=72))
 ENDED_KEEP = timedelta(days=14)
 ENDING_MARKS = (10, 60)                     # minutes before the scheduled end, nearest first
+ENDING_KEY = "ending%d:%d"                  # the alert key of a reminder: its mark, the candidate id
 OUT_OF_STOCK = "OUT_OF_STOCK"
 
 # ---- alerts ------------------------------------------------------------------
@@ -299,8 +302,8 @@ class _EbayMeter:
     A detail fetch for a watch that has made its reads is refused with a kind of
     EbayBudgetExceeded, which the funnel already knows: it stops, and the listings it has
     not reached are found again by a later search. The poller asks `refreshes_left` itself
-    before a paced refresh. The read made for an alert that is about to go out is counted
-    but never refused: an alert does not wait on a budget.
+    before a paced refresh. A read that an alert waits on (a held alert about to go out, an
+    "ending soon" reminder) is counted but never refused: an alert does not wait on a budget.
 
     It is also the circuit breaker for eBay. Once a call has found eBay unreachable (no
     network, no token, a 429), every later call of the tick fails the same way without a
@@ -483,11 +486,16 @@ class _Tick:
 
         A watch that has made its refreshes for today is passed over. Its listings stay due,
         so tomorrow's first reads go to the ones that end soonest.
+
+        The exception is a read that an "ending soon" reminder waits on. An auction is read
+        every hour, so one that ends late in the UTC day has used the watch's refreshes long
+        before its last hour, and without the exception its reminders would never be sent.
+        That is two reads at most in the life of an auction, one for each reminder.
         """
         for candidate in self.store.due_for_refresh():
             if self.ebay_stopped:
                 break
-            if self.ebay.refreshes_left(candidate["watch_id"]) <= 0:
+            if self.ebay.refreshes_left(candidate["watch_id"]) <= 0 and not self._reminder_waits(candidate):
                 self._waits(candidate["watch_id"])
                 continue
             self._guard("refresh %s" % candidate["code"], self._refresh, candidate)
@@ -625,25 +633,44 @@ class _Tick:
 
     def _remind_if_ending(self, watch: Mapping[str, Any], spec: Mapping[str, Any],
                           candidate: Mapping[str, Any]) -> None:
-        """Queue an "ending soon" reply at 60 and at 10 minutes before an auction's scheduled end.
+        """Queue an "ending soon" reply at 60 and at 10 minutes before an auction's scheduled end."""
+        mark = self._ending_mark(watch, candidate)
+        if mark is not None:
+            self._enqueue(watch, spec, candidate, "ending", ENDING_KEY % (mark, candidate["id"]))
 
-        Only for what the user singled out (a starred listing or a hot watch), and only for
-        a listing they have already been sent: a reminder about an unknown listing would
-        arrive alongside its first card.
+    def _ending_mark(self, watch: Mapping[str, Any], candidate: Mapping[str, Any]) -> Optional[int]:
+        """Which "ending soon" reminder a listing is due right now: 60, 10 or None.
+
+        Reminders are only for what the user singled out (a starred listing or a hot watch),
+        and only for a listing they have already been sent: a reminder about an unknown
+        listing would arrive alongside its first card.
         """
         if not (candidate["starred"] or watch["tier"] == "hot"):
-            return
+            return None
         end = parse_iso(candidate["end_at"])
-        if end is None or "AUCTION" not in (candidate["listing"].get("buying_options") or []):
-            return
+        if end is None or "AUCTION" not in ((candidate["listing"] or {}).get("buying_options") or []):
+            return None
         minutes_left = (end - self.now).total_seconds() / 60.0
         if minutes_left <= 0 or not self._announced(candidate["id"], sent_only=True):
-            return
-        for mark in ENDING_MARKS:
-            if minutes_left <= mark:
-                # Nearest mark first, so a first look inside the last 10 minutes sends one reminder.
-                self._enqueue(watch, spec, candidate, "ending", "ending%d:%d" % (mark, candidate["id"]))
-                return
+            return None
+        # Nearest mark first, so a first look inside the last 10 minutes sends one reminder.
+        return next((mark for mark in ENDING_MARKS if minutes_left <= mark), None)
+
+    def _reminder_waits(self, candidate: Mapping[str, Any]) -> bool:
+        """True when reading this listing now would queue an "ending soon" reminder.
+
+        It asks what `_follow_up` will ask once the listing has been read, and also that the
+        reminder is not in the outbox already. Otherwise a watch out of refreshes would read
+        the listing on every tick of its last hour.
+        """
+        watch = self.store.get_watch(candidate["watch_id"])
+        if watch is None or watch["status"] != "active" or candidate["state"] not in ANNOUNCED_STATES:
+            return False
+        mark = self._ending_mark(watch, candidate)
+        if mark is None:
+            return False
+        key = ENDING_KEY % (mark, candidate["id"])
+        return all(alert["dedupe_key"] != key for alert in self.store.alerts_for_candidate(candidate["id"]))
 
     # ---- phases 3 and 4: search and sweep ------------------------------------------
 

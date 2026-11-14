@@ -139,7 +139,7 @@ One tick:
 6. About every six hours per watch, run an unwindowed sweep. One call refreshes price and bids for known listings, catches relists, and rechecks parked listings against your ceiling.
 7. Send the outbox. Ping the heartbeat only if every eBay, Crusoe and send call in this tick succeeded.
 
-**eBay call budget.** eBay allows 5,000 calls a day. The tool stops itself at 4,800, keeps 400 in reserve for adds and retries, and caps each watch at 25 non-search calls a day (8 detail fetches, 12 tracked refreshes, 4 sweeps, 1 parked recheck). When a cap is hit, work waits, soonest-ending first.
+**eBay call budget.** eBay allows 5,000 calls a day. The tool stops itself at 4,800, keeps 400 in reserve for adds and retries, and gives each watch 25 non-search calls a day: 4 sweeps and 21 listing reads, of which at most 12 are routine refreshes. A watch that has used its reads is not searched again until the next day, and its remaining refreshes wait, soonest-ending first. The read behind an ending reminder or a held alert is counted but never held back.
 
 | Watches | Search cadence | Searches | Per-watch caps | Reserve | Total |
 |---|---|---|---|---|---|

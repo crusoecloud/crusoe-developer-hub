@@ -37,6 +37,7 @@ Variables set in your shell take priority over `.env`. A stale export in a shell
 | Lots of "maybe: size" | Sellers left the size out of the item specifics | Set `strictness=normal` if it is `strict`, or accept the digest |
 | A good listing was rejected | A field contradicted the spec | `eft explain CODE` shows the stage and the quote. Fix the spec with `eft watch set`, or mark the field `optional` or `na` |
 | Nothing arrives overnight | The poller stops while a laptop sleeps | Alerts arrive on wake. For continuous polling run `eft tick` from cron or a systemd timer on a machine that stays on |
+| A watch stops being searched late in the day | It used its daily allowance of 21 listing reads | It resumes the next day (UTC). `eft --json tick` lists it under `allowance_spent`. If it happens daily, narrow the watch |
 | `daily cap reached` | 4,800 eBay calls used today | Fewer watches, or fewer marked hot. eBay raises limits through its Application Growth Check |
 
 ## State

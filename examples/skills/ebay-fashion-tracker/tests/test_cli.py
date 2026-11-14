@@ -290,9 +290,45 @@ class Add(CliTest):
         self.assertIn("Confirm the size at [link removed] please", data["questions"])
         self.assertNotIn("evil.example", json.dumps(data))
 
+    def test_a_field_a_model_filled_in_with_a_link_is_left_out_of_the_draft_its_name_and_its_notes(self):
+        # The seller's text carries the links, so the "style code" among them really was read.
+        self.ebay.by_legacy["256012345678"] = poller.detail(
+            title="Nike Dunk Low Panda DD1391-100 verify at https://evil.example/claim HTTPS://EVIL.EXAMPLE/CODE")
+        self.crusoe.answers["parse"] = draft(
+            model="Dunk Low - verify at https://evil.example/claim",
+            style_codes=["DD1391-100", "HTTPS://EVIL.EXAMPLE/CODE"],
+            colorway={"official": "White/Black", "nicknames": ["Panda", "see www.evil.example"], "colors": ["white"]},
+            visual_signature=["black swoosh", "more at http://evil.example/look"])
+        for source in (["--url", "https://www.ebay.com/itm/256012345678"],
+                       ["--text", "Nike Dunk Low Panda DD1391-100 from https://evil.example/code"]):
+            code, out, err = self.eft("--json", "add", *source)
+            self.assertEqual(code, 0, source)
+            self.assertNotIn("evil.example", (out + err).lower(), source)
+            data = json.loads(out)
+            watch = self.store.get_watch(data["watch"]["id"])
+            self.assertEqual(watch["name"], "Nike", "the name, which heads every card, is built from what was kept")
+            self.assertEqual((watch["spec"]["brand"], watch["spec"]["model"]), ("Nike", None))
+            self.assertEqual(watch["spec"]["style_codes"], ["DD1391-100"])
+            self.assertEqual(watch["spec"]["colorway"]["nicknames"], ["Panda"])
+            self.assertEqual(watch["spec"]["visual_signature"], ["black swoosh"])
+            self.assertTrue(any(note.endswith("held a link: model, colorway, visual_signature, style_codes")
+                                for note in data["notes"]), data["notes"])
+            self.assertNotIn("evil.example", json.dumps(watch).lower())
+        code, out, _ = self.eft("add", "--url", "https://www.ebay.com/itm/256012345678")
+        self.assertEqual(out.splitlines()[0], "draft watch 3: Nike")
+        self.assertNotIn("evil.example", out.lower())
+
     def test_add_needs_exactly_one_source(self):
         self.assertEqual(self.eft("add")[0], 2)
         self.assertEqual(self.eft("add", "--text", "a", "--url", "b")[0], 2)
+
+    def test_an_empty_source_is_a_usage_error_and_not_a_bad_link(self):
+        for option in ("--text", "--image", "--url"):
+            for empty in ("", "  "):
+                code, _, err = self.eft("add", option, empty)
+                self.assertEqual(code, 2, (option, empty))
+                self.assertIn("%s needs a value" % option, err)
+        self.assertEqual((self.crusoe.prompts, self.ebay.calls, self.store.list_watches()), ([], [], []))
 
 
 class Watches(CliTest):
@@ -402,6 +438,90 @@ class Watches(CliTest):
                    if message["has_listing_data"]]
         self.assertEqual(showing, ["slack"], "still on record, so the poller can strip it later")
 
+    def stripped_card(self):
+        """Send a card and let six hours pass, so that a poll strips it down to its title and link."""
+        self.active_watch()
+        row = self.tracked()
+        self.clock.advance(hours=6, minutes=1)
+        self.eft("tick")
+        [stub] = self.wire.updates()
+        self.assertIn("Nike Dunk Low Panda White Black", json.dumps(stub), "the six-hour stub keeps the title")
+        self.assertIn("https://www.ebay.com/itm/1", json.dumps(stub))
+        self.assertEqual(self.showing(row), {"slack": 0, "pushover": 0}, "neither row counts as showing data")
+        return row, stub
+
+    def showing(self, row):
+        return {message["channel"]: message["has_listing_data"]
+                for message in self.store.messages_for_candidate(row["id"])}
+
+    def assert_ended(self, update, stub):
+        self.assertEqual((update["channel"], update["ts"]), (stub["channel"], stub["ts"]))
+        said = json.dumps(update)
+        self.assertIn("has ended", said)
+        self.assertNotIn("Nike Dunk Low Panda White Black", said)
+        self.assertNotIn("ebay.com/itm", said)
+
+    def test_remove_also_rewrites_a_card_that_was_already_stripped_at_six_hours(self):
+        _, stub = self.stripped_card()
+        code, _, _ = self.eft("watch", "remove", "1")
+        self.assertEqual(code, 0)
+        self.assertEqual(len(self.wire.updates()), 2)
+        self.assert_ended(self.wire.updates()[-1], stub)
+        self.assertEqual(self.store.list_candidates(), [])
+
+    def test_remove_waits_when_a_stripped_card_cannot_be_rewritten_and_the_poller_finishes_it(self):
+        row, stub = self.stripped_card()
+        self.wire.transport.handler = lambda *request: json_response({"ok": False, "error": "ratelimited"})
+        code, _, err = self.eft("watch", "remove", "1")
+        self.assertEqual(code, 1)
+        self.assertIn("1 sent message(s) could not be rewritten", err)
+        self.assertEqual(self.store.get_watch(1)["status"], "paused")
+        self.assertEqual(self.showing(row), {"slack": 1, "pushover": 0},
+                         "due again, so the poller's next run retries the rewrite")
+        self.wire.transport.handler = self.wire.handle
+        self.eft("tick")
+        self.assert_ended(self.wire.updates()[-1], stub)
+        sent = len(self.wire.updates())
+        self.assertEqual(self.eft("watch", "remove", "1")[0], 0)
+        self.assertEqual(len(self.wire.updates()), sent, "a card that already says Ended is not rewritten again")
+        self.assertEqual(self.store.list_watches(), [])
+
+    def test_a_reference_that_is_empty_names_no_watch(self):
+        watch = self.draft_watch()                  # the only watch: an empty fragment would match it
+        for command in ("remove", "show", "pause", "activate"):
+            for empty in ("", "  "):
+                code, _, err = self.eft("watch", command, empty)
+                self.assertEqual(code, 2, (command, empty))
+                self.assertIn("a watch id or name is needed", err)
+        self.assertEqual(self.eft("dryrun", "")[0], 2)
+        self.assertEqual(self.store.get_watch(watch["id"])["status"], "draft")
+
+    def test_reactivating_a_paused_watch_keeps_its_window_so_the_pause_is_searched(self):
+        watch = self.draft_watch()
+        self.eft("watch", "activate", "1")
+        self.eft("tick")
+        searched_to = self.store.get_watch(watch["id"])["window_end"]
+        self.assertEqual(searched_to, iso(self.clock()))
+        self.eft("watch", "pause", "1")
+        self.clock.advance(days=2)
+        code, data = self.eft_json("watch", "activate", "1")
+        self.assertEqual(code, 0)
+        stored = self.store.get_watch(watch["id"])
+        self.assertEqual((stored["status"], stored["window_end"]), ("active", searched_to))
+        resumed_from = self.clock() - timedelta(days=2, minutes=15)
+        self.assertTrue(any(iso(resumed_from) in note for note in data["notes"]), data["notes"])
+        self.ebay.list(poller.detail(7, created_at=iso(self.clock() - timedelta(days=1))))
+        self.eft("tick")
+        self.assertEqual(self.ebay.searches()[-1]["start_from"], resumed_from)
+        self.assertEqual(self.store.get_candidate(watch["id"], "v1|7|0")["state"], "alerted",
+                         "listed while the watch was paused, and found")
+        # Past 72 hours the window is capped, as it is after the poller has been off.
+        self.eft("watch", "pause", "1")
+        self.clock.advance(days=9)
+        self.eft("watch", "activate", "1")
+        self.eft("tick")
+        self.assertEqual(self.ebay.searches()[-1]["start_from"], self.clock() - timedelta(hours=72))
+
     def test_list_and_show(self):
         self.active_watch()
         self.tracked()
@@ -480,6 +600,33 @@ class StatusAndDoctor(CliTest):
         self.eft("agent", "install")
         self.assertEqual(self.eft_json("status")[1]["waiting"], [])
 
+    def test_without_launchd_the_poller_step_goes_by_when_the_last_poll_ran(self):
+        self.rt = self.runtime(platform="linux")
+        watch = self.draft_watch()
+        self.assertEqual(self.eft_json("status")[1]["waiting"], ["Draft watches waiting to be activated: 1"])
+        code, data = self.eft_json("watch", "activate", str(watch["id"]))
+        self.assertEqual(code, 0)
+        [note] = data["notes"]
+        self.assertTrue(note.startswith("No poll has run yet."), note)
+        self.assertIn("eft agent install", note)
+        self.assertEqual(self.eft_json("status")[1]["waiting"], [note])
+        self.eft("tick")
+        polled = iso(self.clock())
+        self.clock.advance(minutes=59)
+        self.assertEqual(self.eft_json("status")[1]["waiting"], [], "a poll ran within the hour")
+        self.clock.advance(minutes=2)
+        [step] = self.eft_json("status")[1]["waiting"]
+        self.assertTrue(step.startswith("No poll has run since %s." % polled), step)
+        self.assertIn("crontab", self.eft("status")[1])
+
+    def test_activating_a_watch_says_so_when_no_poller_is_installed(self):
+        watch = self.draft_watch()
+        _, data = self.eft_json("watch", "activate", str(watch["id"]))
+        self.assertEqual(data["notes"], ["Start the background poller: eft agent install"])
+        self.eft("agent", "install")
+        self.eft("watch", "pause", "1")
+        self.assertEqual(self.eft_json("watch", "activate", "1")[1]["notes"], [])
+
     def test_doctor_env_json_names_variables_and_holds_no_secret(self):
         code, out, err = self.eft("--json", "doctor", "env")
         data = json.loads(out)
@@ -514,11 +661,15 @@ class StatusAndDoctor(CliTest):
         self.assertIs(rows[".env file"]["ok"], False)
         self.assertIn("export the variables", rows[".env file"]["detail"])
         self.assertIs(rows["state directory"]["ok"], False)
-        # The same directory as a command's state: a handled problem, not a traceback.
+        # The same directory as a command's state: a handled problem, not a traceback. A poll
+        # meets it first when it takes its lock, before it has opened the store.
         self.rt = cli.Runtime(settings=settings)
-        code, _, err = self.eft("status")
-        self.assertEqual(code, 1)
-        self.assertIn("EFT_STATE_DIR", err)
+        for command in ("status", "tick"):
+            code, _, err = self.eft(command)
+            self.assertEqual(code, 1, command)
+            self.assertTrue(err.startswith("eft: cannot open the state directory"), err)
+            self.assertIn("EFT_STATE_DIR", err)
+            self.assertEqual(err.count("\n"), 1, command)
 
     def test_doctor_env_points_out_an_env_file_that_other_users_can_read(self):
         root = tempfile.mkdtemp()
@@ -658,14 +809,18 @@ class Tracking(CliTest):
 
     def test_tick_reports_what_it_did_and_exits_1_when_something_failed(self):
         self.ebay.list(poller.detail())
-        code, data = self.eft_json("tick")
+        code, out, err = self.eft("--json", "tick")
+        data = json.loads(out)
         self.assertEqual((code, data["queued"], data["delivery"]["sent"], data["problems"]), (0, 1, 1, []))
+        self.assertEqual(err, "", "a clean poll leaves the agent's log alone")
         self.assertTrue(os.path.exists(os.path.join(str(self.settings.state_dir), "tick.lock")))
         self.clock.advance(minutes=10)
         self.ebay.search_error = poller.EbayUnavailable("eBay search failed: HTTP 503", status=503)
-        code, out, _ = self.eft("tick")
+        code, out, err = self.eft("tick")
         self.assertEqual(code, 1)
         self.assertIn("watch 1: eBay search failed: HTTP 503", out)
+        # The agent sends standard output to /dev/null, so its log gets the problem, with the time.
+        self.assertEqual(err, "%s watch 1: eBay search failed: HTTP 503\n" % iso(self.clock()))
 
     def test_a_second_tick_at_the_same_time_does_nothing(self):
         with cli.tick_lock(self.settings) as free:
@@ -790,6 +945,70 @@ class Feedback(CliTest):
         self.eft("feedback", self.wrong["code"], "--reason", "wrong shoe")
         self.assertEqual(self.store.get_alert(waiting)["status"], "dropped")
 
+    def assert_ended(self, update):
+        said = json.dumps(update)
+        self.assertIn("has ended", said)
+        self.assertNotIn("Nike Dunk Low Panda", said)
+        self.assertNotIn("ebay.com/itm", said)
+
+    def test_feedback_rewrites_the_card_of_the_rejected_listing(self):
+        self.assertEqual(len(self.wire.posts()), 1, "the card of the listing found by the poll")
+        code, data = self.eft_json("feedback", self.adult["code"], "--reason", "wrong shoe")
+        self.assertEqual((code, data["messages_left"]), (0, 0))
+        [update] = self.wire.updates()
+        self.assert_ended(update)
+        self.assertEqual([m["has_listing_data"] for m in self.store.messages_for_candidate(self.adult["id"])], [0, 0])
+
+    def test_apply_rewrites_the_cards_of_the_listings_it_drops_even_ones_stripped_at_six_hours(self):
+        payload = {"code": self.kids["code"], "kind": "new", "tier": "P2", "watch_name": self.watch["name"],
+                   "title": "Nike Dunk Low Panda GS 6Y", "web_url": "https://www.ebay.com/itm/2"}
+        sent = self.store.enqueue_alert("new:%d" % self.kids["id"], "new", "P2", payload, watch_id=self.watch["id"],
+                                        candidate_id=self.kids["id"], status="sent")
+        where = {"channel": "D0DM", "ts": "1700000000.000009"}
+        stub = self.store.record_message(sent, "slack", where, candidate_id=self.kids["id"], as_of=iso(self.clock()))
+        self.store.mark_message_expired(stub)       # what the poller does to a card at six hours
+        _, proposed = self.eft_json("feedback", self.wrong["code"], "--reason", "that is the kids version")
+        self.assertEqual(self.wire.updates(), [], "the listing the feedback is about had no card")
+        code, data = self.eft_json("feedback", "--apply", str(proposed["feedback_id"]))
+        self.assertEqual((code, data["removed"], data["messages_left"]), (0, [self.kids["code"]], 0))
+        [update] = self.wire.updates()
+        self.assertEqual((update["channel"], update["ts"]), (where["channel"], where["ts"]))
+        self.assert_ended(update)
+
+    def test_a_card_that_cannot_be_rewritten_is_reported_and_left_to_the_poller(self):
+        self.wire.transport.handler = lambda *request: json_response({"ok": False, "error": "ratelimited"})
+        code, out, _ = self.eft("feedback", self.adult["code"], "--reason", "wrong shoe")
+        self.assertEqual(code, 0)
+        self.assertIn("1 sent message(s) could not be rewritten just now", out)
+        self.wire.transport.handler = self.wire.handle
+        self.eft("tick")
+        self.assert_ended(self.wire.updates()[-1])
+
+    def test_a_patch_term_with_a_link_is_never_shown_stored_or_applied(self):
+        self.crusoe.answers["parse"] = dict(
+            copy.deepcopy(PATCH), add_must_not=["GS", "GS - see https://evil.example/why"],
+            set={"department": "men", "model": "Dunk Low www.evil.example",
+                 "colorway": {"official": "White/Black", "nicknames": ["Panda", "http://evil.example/panda"]}},
+            explanation="Rules out grade-school pairs, see https://evil.example/why")
+        code, out, err = self.eft("--json", "feedback", self.wrong["code"], "--reason", "that is the kids version")
+        self.assertEqual(code, 0)
+        self.assertNotIn("evil.example", out + err)
+        data = json.loads(out)
+        # A field is replaced whole or not at all, so the colorway with a hole in it is dropped too.
+        self.assertEqual(data["patch"], {"add_must_not": ["GS"], "set": {"department": "men"}})
+        self.assertEqual(data["explanation"], "Rules out grade-school pairs, see [link removed]")
+        self.assertNotIn("evil.example", json.dumps(self.store.list_feedback()))
+        self.assertEqual(self.eft("feedback", "--apply", str(data["feedback_id"]))[0], 0)
+        spec = self.store.get_watch(self.watch["id"])["spec"]
+        self.assertEqual((spec["model"], spec["colorway"]["nicknames"], spec["must_not"]),
+                         ("Dunk Low", ["Panda"], ["GS"]))
+
+        self.crusoe.answers["parse"] = dict(copy.deepcopy(PATCH), add_must_not=["GS - see https://evil.example/why"])
+        code, out, _ = self.eft("feedback", self.adult["code"], "--reason", "wrong shoe")
+        self.assertEqual(code, 0)
+        self.assertIn("no change to the watch is proposed", out)
+        self.assertNotIn("evil.example", out)
+
     def test_feedback_needs_a_code_and_a_reason_or_an_id_to_apply(self):
         for argv in (["feedback"], ["feedback", "A1"], ["feedback", "--reason", "why"],
                      ["feedback", "A1", "--apply", "1"], ["feedback", "--apply", "one"]):
@@ -812,6 +1031,9 @@ class Agent(CliTest):
         self.assertTrue(all(os.path.isabs(path) for path in (python, launcher)))
         self.assertTrue(os.access(launcher, os.X_OK))
         self.assertEqual((job["Label"], job["StartInterval"], job["RunAtLoad"]), ("com.crusoe.eft", 600, True))
+        # Not "/": the folder a relative path in a setting is read against.
+        self.assertEqual(job["WorkingDirectory"], str(self.settings.skill_root))
+        self.assertTrue(os.path.isabs(job["WorkingDirectory"]) and os.path.isdir(job["WorkingDirectory"]))
         self.assertEqual(job["EnvironmentVariables"], {"EFT_STATE_DIR": str(self.settings.state_dir),
                                                        "EFT_ENV_FILE": str(self.settings.env_file)})
         self.assertEqual(job["StandardErrorPath"], os.path.join(str(self.settings.state_dir), "tick.log"))
@@ -858,6 +1080,25 @@ class Agent(CliTest):
         self.assertFalse(os.path.exists(self.plist))
         self.assertIsNone(self.eft_json("agent", "status")[1]["installed"])
 
+    def test_the_cron_line_runs_at_the_interval_asked_for_or_is_refused(self):
+        self.rt = self.runtime(platform="linux")
+        for minutes, fields in ((1, "*/1 * * * *"), (5, "*/5 * * * *"), (30, "*/30 * * * *"), (60, "0 * * * *"),
+                                (120, "0 */2 * * *"), (720, "0 */12 * * *"), (1440, "0 0 * * *")):
+            code, data = self.eft_json("agent", "install", "--interval", str(minutes))
+            self.assertEqual(code, 0, minutes)
+            self.assertTrue(data["cron"].startswith(fields + " EFT_STATE_DIR="), data["cron"])
+        # */45 would run at :00 and :45, 90 minutes would come out hourly, and */48 is not an hour.
+        for minutes in (7, 45, 90, 300, 2880):
+            code, out, err = self.eft("agent", "install", "--interval", str(minutes))
+            self.assertEqual((code, out), (2, ""), minutes)
+            self.assertIn("cannot run every %d minutes" % minutes, err)
+
+    def test_launchd_takes_any_interval(self):
+        code, data = self.eft_json("agent", "install", "--interval", "90")
+        self.assertEqual((code, data["interval_minutes"]), (0, 90))
+        with open(self.plist, "rb") as handle:
+            self.assertEqual(plistlib.load(handle)["StartInterval"], 5400)
+
     def test_interval_must_be_a_positive_number_of_minutes(self):
         self.assertEqual(self.eft("agent", "install", "--interval", "0")[0], 2)
         self.assertEqual(self.commands, [])
@@ -891,6 +1132,43 @@ class Uninstall(CliTest):
         fresh = Store(self.db)
         self.addCleanup(fresh.close)
         self.assertEqual(fresh.list_watches(), [])
+
+    def test_uninstall_without_launchd_says_that_the_cron_line_is_still_there(self):
+        self.assertFalse(any("crontab" in step for step in self.eft_json("uninstall", "--yes")[1]["manual_steps"]),
+                         "on macOS the agent is unloaded here, so there is nothing to say")
+        self.rt = self.runtime(store=None, notifier=None, platform="linux")
+        code, data = self.eft_json("uninstall", "--yes")
+        self.assertEqual((code, data["agent_removed"]), (0, False))
+        self.assertIn("remove the `eft tick` line from your crontab or systemd timer", data["manual_steps"][0])
+        self.assertIn("crontab", self.eft("uninstall", "--yes")[1])
+
+    def sent_card(self, stripped):
+        """Record a sent Slack card for a tracked listing, fresh or as the poller leaves it at six hours."""
+        store = self.rt.store
+        row = store.upsert_candidate(1, "v1|1|0", "alerted", tracked=True, fetched_at=store.now_iso(),
+                                     listing={"title": "Nike Dunk Low Panda", "web_url": "https://www.ebay.com/itm/1"})
+        payload = {"code": row["code"], "kind": "new", "tier": "P2", "watch_name": "Panda Dunks 10",
+                   "title": "Nike Dunk Low Panda", "web_url": "https://www.ebay.com/itm/1"}
+        alert_id = store.enqueue_alert("new:1", "new", "P2", payload, watch_id=1, candidate_id=row["id"], status="sent")
+        message_id = store.record_message(alert_id, "slack", {"channel": "D0DM", "ts": "1700000000.000001"},
+                                          candidate_id=row["id"], as_of=store.now_iso())
+        if stripped:
+            store.mark_message_expired(message_id)
+
+    def test_uninstall_rewrites_sent_cards_including_ones_stripped_at_six_hours(self):
+        self.sent_card(stripped=True)
+        code, data = self.eft_json("uninstall", "--yes")
+        self.assertEqual((code, data["messages_left"]), (0, 0))
+        [update] = self.wire.updates()
+        self.assertIn("has ended", json.dumps(update))
+        self.assertNotIn("Nike Dunk Low Panda", json.dumps(update))
+
+    def test_uninstall_counts_a_stripped_card_it_could_not_rewrite_as_left_behind(self):
+        self.sent_card(stripped=True)
+        self.wire.transport.handler = lambda *request: json_response({"ok": False, "error": "ratelimited"})
+        code, data = self.eft_json("uninstall", "--yes")
+        self.assertEqual((code, data["messages_left"]), (0, 1))
+        self.assertIn("delete 1 Slack message(s)", " | ".join(data["manual_steps"]))
 
     def test_a_state_directory_with_someone_elses_files_is_emptied_of_ours_but_kept(self):
         other = os.path.join(str(self.settings.state_dir), "notes.txt")
@@ -953,10 +1231,13 @@ class ExitCodes(CliTest):
                      ["dryrun"], ["star"]):
             self.assertEqual(self.eft(*argv)[0], 2, argv)
 
-    def test_json_flag_works_before_and_after_the_command(self):
-        for argv in (["--json", "watch", "list"], ["watch", "list", "--json"]):
+    def test_json_flag_works_before_and_after_the_command_and_inside_a_command_group(self):
+        for argv in (["--json", "watch", "list"], ["watch", "list", "--json"], ["watch", "--json", "list"]):
             code, out, _ = self.eft(*argv)
             self.assertEqual((code, json.loads(out)), (0, {"watches": []}))
+        code, out, _ = self.eft("agent", "--json", "status")
+        self.assertEqual((code, json.loads(out)["installed"]), (0, False))
+        self.assertEqual(self.eft("watch", "list"), (0, "no watches yet\n", ""), "and it is off unless given")
 
     def test_help_exits_0(self):
         code, out, _ = self.eft("--help")
@@ -967,10 +1248,11 @@ class ExitCodes(CliTest):
 class Launcher(unittest.TestCase):
     """The real `scripts/eft`, in a subprocess, with no keys and an empty state directory."""
 
-    def launch(self, *arguments):
+    def launch(self, *arguments, **overrides):
         scratch = tempfile.mkdtemp(prefix="eft-launch-")
         environ = {"HOME": scratch, "PATH": os.environ.get("PATH", ""),
                    "EFT_STATE_DIR": os.path.join(scratch, "state"), "EFT_ENV_FILE": os.path.join(scratch, "no.env")}
+        environ.update(overrides)
         done = subprocess.run([sys.executable, LAUNCHER] + list(arguments), env=environ, timeout=60,
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
         self.assertNotIn("Traceback", done.stderr + done.stdout)
@@ -996,6 +1278,28 @@ class Launcher(unittest.TestCase):
         self.assertEqual((done.returncode, done.stderr), (0, ""))
         report = json.loads(done.stdout)
         self.assertEqual((report["searched"], report["problems"], report["heartbeat"]), (0, [], None))
+
+    def test_a_poll_that_cannot_write_its_state_directory_is_a_handled_problem(self):
+        blocked = os.path.join(tempfile.mkdtemp(prefix="eft-launch-"), "a-file")
+        open(blocked, "w").close()
+        done = self.launch("--json", "tick", EFT_STATE_DIR=os.path.join(blocked, "state"))
+        self.assertEqual(done.returncode, 1)
+        self.assertEqual(json.loads(done.stdout)["ok"], False)
+        self.assertTrue(done.stderr.startswith("eft: cannot open the state directory"), done.stderr)
+        self.assertEqual(done.stderr.count("\n"), 1)
+
+    def test_a_poll_with_a_problem_leaves_a_line_in_the_agents_log(self):
+        # As the agent runs it: standard output thrown away, standard error kept as the log.
+        state = os.path.join(tempfile.mkdtemp(prefix="eft-launch-"), "state")
+        store = Store(os.path.join(state, "tracker.db"))
+        wanted = poller.dunk_spec()
+        store.create_watch("Panda Dunks 10", wanted, status="active", plan={"q": "Nike Dunk Low", "category_id": None,
+                                                                             "buying_options": ["FIXED_PRICE"]})
+        store.close()
+        done = self.launch("tick", EFT_STATE_DIR=state)       # no eBay keys: the search cannot even start
+        self.assertEqual(done.returncode, 1)
+        [line] = done.stderr.splitlines()
+        self.assertRegex(line, r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ config: ebay is not configured: set EBAY_CLIENT_ID")
 
     def test_the_launcher_is_executable(self):
         self.assertTrue(os.access(LAUNCHER, os.X_OK))
