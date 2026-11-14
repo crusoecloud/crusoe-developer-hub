@@ -35,6 +35,9 @@ export default {
       if (!code) {
         return new Response("ok", { status: 200 });
       }
+      if (!/^[\x21-\x7E]{1,256}$/.test(code)) {
+        return new Response("bad challenge_code", { status: 400 });
+      }
       const input = new TextEncoder().encode(code + env.VERIFICATION_TOKEN + env.ENDPOINT_URL);
       const digest = await crypto.subtle.digest("SHA-256", input);
       const challengeResponse = Array.from(new Uint8Array(digest))

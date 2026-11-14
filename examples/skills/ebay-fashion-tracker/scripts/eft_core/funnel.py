@@ -27,6 +27,7 @@ the tick does both.
 """
 from __future__ import annotations
 
+import urllib.parse
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
@@ -44,6 +45,8 @@ from .store import iso, parse_iso, strip_evidence
 
 TRIAGE_BATCH = 10
 MAX_TAG_PHOTOS = 4
+PHOTO_HOST = "ebayimg.com"
+MAX_PHOTO_BYTES = 10 * 1024 * 1024
 # Failed attempts (a model with no valid answer, a listing eBay cannot return) before giving up.
 MAX_ATTEMPTS = 3
 # How long an untracked row (rejected, pending, unavailable) is kept when the listing has no end date.
@@ -170,12 +173,23 @@ class _Case:
 
 # ---- helpers that need no clients ----------------------------------------------
 
+def is_photo_host(url: str) -> bool:
+    host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    return host == PHOTO_HOST or host.endswith("." + PHOTO_HOST)
+
+
 def fetch_image(url: str, transport: Any = None) -> bytes:
-    """Download one listing photo into memory. The transport refuses eBay web pages."""
+    """Download one listing photo into memory, from eBay's image host only."""
+    if not is_photo_host(url):
+        raise BlockedUrl("listing photos are only fetched from %s" % PHOTO_HOST)
     transport = transport if transport is not None else UrllibTransport()
     response = transport.request("GET", url, headers={"Accept": "image/*"}, timeout=20.0)
     if not response.ok:
         raise TransportError("image request returned HTTP %d" % response.status)
+    if not response.headers.get("content-type", "").lower().startswith("image/"):
+        raise TransportError("image request did not return an image")
+    if len(response.body) > MAX_PHOTO_BYTES:
+        raise TransportError("image is larger than %d bytes" % MAX_PHOTO_BYTES)
     return response.body
 
 

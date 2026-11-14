@@ -26,7 +26,7 @@ import sqlite3
 import subprocess
 import sys
 import uuid
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from functools import partial
@@ -53,6 +53,8 @@ from .tick import LAST_TICK_KEY, OVERFLOW_KEY, RETRY_KEY, cadence_minutes, run_t
 AGENT_LABEL = "com.crusoe.eft"
 PLIST_TEMPLATE = SKILL_ROOT / "deploy" / "launchd" / (AGENT_LABEL + ".plist.tmpl")
 LAUNCHER = SKILL_ROOT / "scripts" / "eft"
+LAUNCHCTL = "/bin/launchctl"
+REFERENCE_NAME = re.compile(r"[0-9a-f]{12}(\..*)?", re.DOTALL)
 DEFAULT_INTERVAL_MINUTES = 5
 LOCK_FILE = "tick.lock"
 LOG_FILE = "tick.log"
@@ -1140,8 +1142,8 @@ def cmd_agent_install(rt: Runtime, args: argparse.Namespace) -> Output:
     except OSError as problem:
         raise Problem("cannot write %s (%s)" % (path, problem.__class__.__name__))
     # A copy that is already loaded has to go first. This fails, harmlessly, when there is none.
-    rt.run(["launchctl", "bootout", "%s/%s" % (_launchd_domain(), AGENT_LABEL)])
-    code, said = rt.run(["launchctl", "bootstrap", _launchd_domain(), str(path)])
+    rt.run([LAUNCHCTL, "bootout", "%s/%s" % (_launchd_domain(), AGENT_LABEL)])
+    code, said = rt.run([LAUNCHCTL, "bootstrap", _launchd_domain(), str(path)])
     if code != 0:
         raise Problem("wrote %s but launchctl did not load it (%s). Load it from your own terminal with: "
                       "launchctl bootstrap %s %s"
@@ -1159,7 +1161,7 @@ def _remove_agent(rt: Runtime) -> bool:
     path = _plist_path()
     if rt.platform != "darwin" or not path.exists():
         return False
-    rt.run(["launchctl", "bootout", "%s/%s" % (_launchd_domain(), AGENT_LABEL)])
+    rt.run([LAUNCHCTL, "bootout", "%s/%s" % (_launchd_domain(), AGENT_LABEL)])
     try:
         path.unlink()
     except OSError as problem:
@@ -1180,7 +1182,7 @@ def cmd_agent_status(rt: Runtime, args: argparse.Namespace) -> Output:
         note = "launchd is macOS only; `eft status` shows when the poller last ran"
         return Output({"installed": None, "loaded": None, "note": note}, note)
     path = _plist_path()
-    code, _ = rt.run(["launchctl", "print", "%s/%s" % (_launchd_domain(), AGENT_LABEL)])
+    code, _ = rt.run([LAUNCHCTL, "print", "%s/%s" % (_launchd_domain(), AGENT_LABEL)])
     data = {"installed": path.exists(), "loaded": code == 0, "plist": str(path)}
     said = "plist %s, agent %s" % ("installed" if data["installed"] else "not installed",
                                    "loaded" if data["loaded"] else "not loaded")
@@ -1188,6 +1190,19 @@ def cmd_agent_status(rt: Runtime, args: argparse.Namespace) -> Output:
 
 
 # ---- uninstall -----------------------------------------------------------------
+
+def _remove_references(refs_dir: Path) -> None:
+    try:
+        entries = list(refs_dir.iterdir())
+    except OSError:
+        return
+    for entry in entries:
+        if REFERENCE_NAME.fullmatch(entry.name) and (entry.is_symlink() or not entry.is_dir()):
+            with suppress(OSError):
+                entry.unlink()
+    with suppress(OSError):
+        refs_dir.rmdir()
+
 
 def _remove_state(settings: Settings) -> bool:
     """Delete the files this tool keeps in its state directory. True when the directory is gone too.
@@ -1201,7 +1216,7 @@ def _remove_state(settings: Settings) -> bool:
             (state_dir / name).unlink()
         except FileNotFoundError:
             pass
-    shutil.rmtree(str(settings.refs_dir), ignore_errors=True)
+    _remove_references(settings.refs_dir)
     try:
         state_dir.rmdir()
     except OSError:

@@ -174,8 +174,8 @@ class Settings:
         )
 
     def ensure_state_dir(self) -> None:
-        self.state_dir.mkdir(parents=True, exist_ok=True)
-        self.refs_dir.mkdir(parents=True, exist_ok=True)
+        self.state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        self.refs_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
 
 
 def load_settings(

@@ -12,7 +12,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
+MAX_BODY_BYTES = 20 * 1024 * 1024
 
 # Official API hosts. Listing images are served from ebayimg.com, a different domain.
 EBAY_API_HOSTS = frozenset({"api.ebay.com", "api.sandbox.ebay.com"})
@@ -61,17 +63,34 @@ class Response:
         return json.loads(self.body.decode("utf-8"))
 
 
+def _origin(url: str) -> Tuple[str, int]:
+    parts = urllib.parse.urlsplit(url)
+    return (parts.hostname or "").lower(), parts.port or 443
+
+
+def read_capped(stream: Any, limit: int) -> bytes:
+    body = stream.read(limit + 1) or b""
+    if len(body) > limit:
+        raise TransportError("the response is larger than %d bytes" % limit)
+    return body
+
+
 class _GuardedRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D102
         check_url(newurl)
+        if _origin(newurl) != _origin(req.full_url):
+            raise TransportError(
+                "%s redirected to another host (%s), which is not followed" % (_host(req.full_url), _host(newurl))
+            )
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 class UrllibTransport:
     """The real transport. HTTP error statuses are returned, not raised."""
 
-    def __init__(self) -> None:
+    def __init__(self, max_body_bytes: int = MAX_BODY_BYTES) -> None:
         self._opener = urllib.request.build_opener(_GuardedRedirect())
+        self._max_body_bytes = max_body_bytes
 
     def request(
         self,
@@ -88,13 +107,13 @@ class UrllibTransport:
                 return Response(
                     status=resp.status,
                     headers={k.lower(): v for k, v in resp.headers.items()},
-                    body=resp.read(),
+                    body=read_capped(resp, self._max_body_bytes),
                 )
         except urllib.error.HTTPError as exc:
             return Response(
                 status=exc.code,
                 headers={k.lower(): v for k, v in (exc.headers or {}).items()},
-                body=exc.read() or b"",
+                body=read_capped(exc, self._max_body_bytes),
             )
         except BlockedUrl:
             raise

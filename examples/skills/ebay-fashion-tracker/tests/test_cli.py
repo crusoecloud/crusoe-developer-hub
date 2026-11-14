@@ -508,6 +508,18 @@ class StatusAndDoctor(CliTest):
         self.assertEqual(code, 1)
         self.assertIn("EFT_STATE_DIR", err)
 
+    def test_doctor_env_points_out_an_env_file_that_other_users_can_read(self):
+        root = tempfile.mkdtemp()
+        env_path = os.path.join(root, ".env")
+        with open(env_path, "w") as handle:
+            handle.write("CRUSOE_API_KEY=from-file\n")
+        for mode, ok in ((0o644, None), (0o600, True)):
+            os.chmod(env_path, mode)
+            settings = load_settings(environ={"HOME": root, "EFT_ENV_FILE": env_path}, skill_root=root)
+            row = {row["name"]: row for row in doctor.check_env(settings)}[".env file"]
+            self.assertIs(row["ok"], ok)
+            self.assertEqual("chmod 600" in row["detail"], ok is None)
+
     def test_doctor_rejects_an_unknown_area(self):
         self.assertEqual(self.eft("doctor", "sleep")[0], 2)
         with self.assertRaises(ValueError):
@@ -797,8 +809,8 @@ class Agent(CliTest):
         for secret in SECRET_VALUES:
             self.assertNotIn(secret, text)
         domain = "gui/%d" % os.getuid()
-        self.assertEqual(self.commands, [["launchctl", "bootout", domain + "/com.crusoe.eft"],
-                                         ["launchctl", "bootstrap", domain, self.plist]])
+        self.assertEqual(self.commands, [["/bin/launchctl", "bootout", domain + "/com.crusoe.eft"],
+                                         ["/bin/launchctl", "bootstrap", domain, self.plist]])
 
     def test_a_path_with_markup_characters_is_escaped(self):
         odd = support.make_settings(EFT_STATE_DIR=os.path.join(self.home, "R&D <state>"))
@@ -821,7 +833,7 @@ class Agent(CliTest):
         code, data = self.eft_json("agent", "uninstall")
         self.assertEqual((code, data), (0, {"removed": True}))
         self.assertFalse(os.path.exists(self.plist))
-        self.assertEqual(self.commands[-1][:2], ["launchctl", "bootout"])
+        self.assertEqual(self.commands[-1][:2], ["/bin/launchctl", "bootout"])
         self.assertEqual(self.eft_json("agent", "uninstall")[1], {"removed": False})
 
     def test_other_platforms_get_a_cron_line_and_nothing_is_installed(self):
@@ -856,13 +868,13 @@ class Uninstall(CliTest):
 
     def test_uninstall_unloads_the_agent_wipes_the_store_and_removes_the_state_directory(self):
         self.eft("agent", "install")
-        with open(os.path.join(str(self.settings.refs_dir), "mine.jpg"), "wb") as handle:
+        with open(os.path.join(str(self.settings.refs_dir), "0123456789ab.jpg"), "wb") as handle:
             handle.write(b"photo")
         code, data = self.eft_json("uninstall", "--yes")
         self.assertEqual(code, 0)
         self.assertEqual((data["agent_removed"], data["store_wiped"], data["state_dir_removed"]), (True, True, True))
         self.assertFalse(os.path.exists(str(self.settings.state_dir)))
-        self.assertEqual(self.commands[-1][:2], ["launchctl", "bootout"])
+        self.assertEqual(self.commands[-1][:2], ["/bin/launchctl", "bootout"])
         self.assertTrue(any("revoke" in step for step in data["manual_steps"]))
         fresh = Store(self.db)
         self.addCleanup(fresh.close)
@@ -875,6 +887,28 @@ class Uninstall(CliTest):
         code, data = self.eft_json("uninstall", "--yes")
         self.assertEqual((code, data["state_dir_removed"]), (0, False))
         self.assertEqual(os.listdir(str(self.settings.state_dir)), ["notes.txt"])
+
+    def test_a_refs_folder_with_someone_elses_files_loses_only_the_copies_this_tool_made(self):
+        refs = str(self.settings.refs_dir)
+        for name in ("0123456789ab.jpg", "family.jpg"):
+            with open(os.path.join(refs, name), "wb") as handle:
+                handle.write(b"photo")
+        os.mkdir(os.path.join(refs, "abcdef012345"))
+        code, data = self.eft_json("uninstall", "--yes")
+        self.assertEqual((code, data["state_dir_removed"]), (0, False))
+        self.assertEqual(sorted(os.listdir(refs)), ["abcdef012345", "family.jpg"])
+
+    def test_the_database_and_the_state_directory_are_private_to_the_user(self):
+        self.assertEqual(os.stat(self.db).st_mode & 0o777, 0o600)
+        self.assertEqual(os.stat(str(self.settings.state_dir)).st_mode & 0o777, 0o700)
+        self.assertEqual(os.stat(str(self.settings.refs_dir)).st_mode & 0o777, 0o700)
+
+    def test_an_existing_database_that_others_can_read_is_closed_to_them(self):
+        self.rt.close()
+        os.chmod(self.db, 0o644)
+        reopened = Store(self.db)
+        self.addCleanup(reopened.close)
+        self.assertEqual(os.stat(self.db).st_mode & 0o777, 0o600)
 
 
 class ExitCodes(CliTest):

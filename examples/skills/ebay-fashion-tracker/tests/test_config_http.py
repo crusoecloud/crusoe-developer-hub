@@ -1,10 +1,14 @@
+import io
 import os
 import tempfile
 import unittest
+import urllib.request
 
 import support  # noqa: F401  (sets up sys.path)
 from eft_core import config
-from eft_core.http import BlockedUrl, FakeTransport, check_url, json_response
+from eft_core.http import (
+    BlockedUrl, FakeTransport, TransportError, _GuardedRedirect, check_url, json_response, read_capped,
+)
 
 
 class EnvParsing(unittest.TestCase):
@@ -143,6 +147,32 @@ class UrlGuard(unittest.TestCase):
         response = transport.request("POST", "https://example.com/a", body=b"{}")
         self.assertEqual(response.status, 201)
         self.assertEqual(response.json()["url"], "https://example.com/a")
+
+
+class RedirectGuard(unittest.TestCase):
+    def follow(self, target):
+        request = urllib.request.Request("https://api.ebay.com/a", headers={"Authorization": "Bearer token"})
+        return _GuardedRedirect().redirect_request(request, None, 302, "Found", {}, target)
+
+    def test_a_redirect_on_the_same_host_is_followed(self):
+        self.assertEqual(self.follow("https://api.ebay.com/b").full_url, "https://api.ebay.com/b")
+
+    def test_a_redirect_to_another_host_is_refused_so_credentials_stay_where_they_were_sent(self):
+        for target in ("https://example.com/b", "https://api.ebay.com:8443/b", "https://api.ebay.com.example.com/b"):
+            with self.assertRaises(TransportError, msg=target):
+                self.follow(target)
+
+    def test_a_redirect_to_an_ebay_page_or_to_plain_http_is_blocked(self):
+        for target in ("https://www.ebay.com/itm/1", "http://api.ebay.com/b"):
+            with self.assertRaises(BlockedUrl, msg=target):
+                self.follow(target)
+
+
+class BodyCap(unittest.TestCase):
+    def test_a_body_within_the_limit_is_returned_and_a_larger_one_is_refused(self):
+        self.assertEqual(read_capped(io.BytesIO(b"12345"), 5), b"12345")
+        with self.assertRaises(TransportError):
+            read_capped(io.BytesIO(b"123456"), 5)
 
 
 if __name__ == "__main__":

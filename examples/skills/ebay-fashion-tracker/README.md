@@ -30,6 +30,7 @@ Version 0.1. The code is covered by unit tests that run offline against fake API
 ```bash
 cd examples/skills/ebay-fashion-tracker
 cp env.example .env
+chmod 600 .env
 ```
 
 Fill in `.env`. Only `CRUSOE_API_KEY` is needed to start; the eBay and alert keys can follow.

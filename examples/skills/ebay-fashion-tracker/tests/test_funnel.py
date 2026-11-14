@@ -11,7 +11,8 @@ from eft_core.errors import (
     ChatResult, CrusoeAuthError, CrusoeError, EbayAuthError, EbayBudgetExceeded, EbayGroupRequired,
     EbayNotFound, EbayUnavailable,
 )
-from eft_core.funnel import MAX_TAG_PHOTOS, REASON_BUDGET, STAGES, Funnel
+from eft_core.funnel import MAX_PHOTO_BYTES, MAX_TAG_PHOTOS, REASON_BUDGET, STAGES, Funnel, fetch_image
+from eft_core.http import BlockedUrl, FakeTransport, Response, TransportError
 from eft_core.store import iso
 
 DETAIL_ONLY_KEYS = ("aspects", "description", "availability", "min_next_bid", "unique_bidders", "reserve_met")
@@ -935,6 +936,34 @@ class StoreWrites(FunnelTest):
     def test_an_empty_search_does_nothing(self):
         self.assertEqual(self.funnel.run(self.watch(), []), [])
         self.assertEqual((self.crusoe.calls, self.ebay.calls), ([], []))
+
+
+class FetchImage(unittest.TestCase):
+    URL = "https://i.ebayimg.com/images/g/abc/s-l1600.jpg"
+
+    def fetch(self, url=URL, status=200, content_type="image/jpeg", body=b"jpeg bytes"):
+        self.transport = FakeTransport().add(
+            Response(status=status, headers={"content-type": content_type}, body=body))
+        return fetch_image(url, transport=self.transport)
+
+    def test_a_photo_on_ebays_image_host_is_downloaded(self):
+        self.assertEqual(self.fetch(), b"jpeg bytes")
+        self.assertEqual(self.transport.calls[0]["url"], self.URL)
+
+    def test_other_hosts_are_never_asked(self):
+        for url in ("https://example.com/a.jpg", "https://ebayimg.com.example.com/a.jpg",
+                    "https://notebayimg.com/a.jpg"):
+            with self.assertRaises(BlockedUrl, msg=url):
+                self.fetch(url)
+            self.assertEqual(self.transport.calls, [])
+
+    def test_a_reply_that_is_not_an_image_or_is_too_large_is_refused(self):
+        with self.assertRaises(TransportError):
+            self.fetch(content_type="text/html")
+        with self.assertRaises(TransportError):
+            self.fetch(body=b"x" * (MAX_PHOTO_BYTES + 1))
+        with self.assertRaises(TransportError):
+            self.fetch(status=404)
 
 
 if __name__ == "__main__":

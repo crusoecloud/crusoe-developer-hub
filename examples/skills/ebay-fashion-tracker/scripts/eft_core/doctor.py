@@ -10,9 +10,11 @@ repeats only error text the clients have already cleared of secrets.
 """
 from __future__ import annotations
 
+import os
 import struct
 import tempfile
 import zlib
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 from .alerts import DeliveryError, Notifier
@@ -94,9 +96,21 @@ def _feature_row(settings: Settings, feature: str) -> Row:
     return _row("env", feature, ok, "not set: " + ", ".join(missing))
 
 
+def _readable_by_others(path: Path) -> bool:
+    if os.name != "posix":
+        return False
+    try:
+        return bool(path.stat().st_mode & 0o077)
+    except OSError:
+        return False
+
+
 def _env_file_row(settings: Settings) -> Row:
     path, problem = settings.env_file, settings.env_file_problem
     if problem is None:
+        if _readable_by_others(path):
+            return _row("env", ".env file", None,
+                        "read %s; other users on this machine can read it too, run: chmod 600 %s" % (path, path))
         return _row("env", ".env file", True, "read %s" % path)
     if problem == "missing":
         return _row("env", ".env file", None, "no file at %s; variables come from the environment only" % path)

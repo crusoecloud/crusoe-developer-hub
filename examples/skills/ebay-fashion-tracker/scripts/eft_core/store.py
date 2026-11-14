@@ -9,8 +9,9 @@ Data rules this module enforces (they come from eBay's API License Agreement):
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Set, Union
@@ -182,7 +183,10 @@ class Store:
         self._depth = 0
         path = str(db_path)
         if path != ":memory:":
-            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            with suppress(OSError):
+                os.close(os.open(path, os.O_RDWR | os.O_CREAT, 0o600))
+                os.chmod(path, 0o600)
         self.conn = sqlite3.connect(path)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
