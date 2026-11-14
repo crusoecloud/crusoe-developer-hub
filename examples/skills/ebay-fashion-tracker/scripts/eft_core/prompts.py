@@ -36,6 +36,9 @@ _JSON_ONLY = "Reply with one JSON object and nothing else, in exactly this shape
 
 TRIAGE_NO_REASONS = ("wrong_model", "wrong_brand", "wrong_colorway", "accessory_or_part", "not_the_item")
 COMPARE_ANSWERS = ("yes", "no", "unsure")
+# The longest quote `read_verify` accepts as evidence. A quote is kept in the trace while the
+# listing is tracked, so it has to be a phrase, never a copy of the description.
+MAX_QUOTE_CHARS = 200
 # The spec fields a feedback patch may replace. A patch is written by a model that has read a
 # listing title, so it may describe the item differently but never touch reference_images (a
 # file path that is read and sent to a model), the price ceiling or anything else.
@@ -195,8 +198,9 @@ _VERIFY_SYSTEM = "\n".join([
     '- "match": the listing text states it, and it agrees with the wanted item.',
     '- "mismatch": the listing text states something that conflicts with the wanted item.',
     '- "unknown": the listing text does not say, or the wanted item does not specify it.',
-    'Every "match" or "mismatch" needs a "quote": a short phrase copied character for character from the '
-    'listing text that shows it. Use "" with "unknown". Never quote the wanted item and never answer from memory.',
+    'Every "match" or "mismatch" needs a "quote": a short phrase (at most %d characters) copied character for '
+    'character from the listing text that shows it. Use "" with "unknown". Never quote the wanted item and never '
+    "answer from memory." % MAX_QUOTE_CHARS,
     'Size is a "match" only when the listing states the wanted size in the wanted size system. A size given '
     'only in another system is "unknown": never convert sizes. style_code is a "match" when the listing states '
     "any one of the wanted style_codes.",
@@ -408,7 +412,9 @@ def read_verify(data: Mapping[str, Any], text: str) -> Tuple[Dict[str, Dict[str,
     """Per-field {"verdict", "quote"} and the flags raised, for the listing `text` that was sent.
 
     A verdict whose quote is not really in the listing text is downgraded to "unknown": the
-    model may have answered from memory, or from the wanted item instead of the listing.
+    model may have answered from memory, or from the wanted item instead of the listing. So is
+    one whose quote is longer than MAX_QUOTE_CHARS: a quote that copies the listing wholesale
+    points at nothing, and it would put the seller's description into the stored trace.
     """
     answers = data.get("fields") if isinstance(data.get("fields"), Mapping) else {}
     fields: Dict[str, Dict[str, str]] = {}
@@ -416,7 +422,7 @@ def read_verify(data: Mapping[str, Any], text: str) -> Tuple[Dict[str, Dict[str,
         answer = answers.get(name) if isinstance(answers.get(name), Mapping) else {}
         verdict = answer.get("verdict") if answer.get("verdict") in rules.VERDICTS else rules.UNKNOWN
         quote = _one_line(answer.get("quote"))
-        if verdict == rules.UNKNOWN or not quote_in(quote, text):
+        if verdict == rules.UNKNOWN or len(quote) > MAX_QUOTE_CHARS or not quote_in(quote, text):
             verdict, quote = rules.UNKNOWN, ""
         fields[name] = {"verdict": verdict, "quote": quote}
     raised = data.get("flags") if isinstance(data.get("flags"), list) else []
@@ -470,9 +476,13 @@ def states_size(texts: Iterable[Any], size: Mapping[str, Any]) -> bool:
 
     "US 10", "US10", "Size 10" and "Medium" state US 10 and M. "Size 10.5" and "10 1/2" do not
     state 10. "UK 10" and "US 9 UK 10" do not state US 10: a value belongs to the system written
-    next to it, and sizes are never converted between systems.
+    next to it, and sizes are never converted between systems. A waist/inseam size is stated by
+    the pair in any of its usual spellings: "32x34", "32 x 34", "32/34", "W32 L34".
     """
-    wanted, system = rules.normalize_size_value(size.get("value")), size.get("system")
+    system = size.get("system")
+    wanted = rules.normalize_size_value(size.get("value"), system)
+    if system == "waist_inseam":
+        return wanted in rules.waist_inseam_sizes(" ".join(str(text) for text in texts))
     marks = _size_marks(texts)
     named = {mark_system for mark_system, _ in marks if mark_system}
     lone_systems = [i for i, (mark_system, value) in enumerate(marks) if mark_system and not value]
@@ -485,7 +495,7 @@ def states_size(texts: Iterable[Any], size: Mapping[str, Any]) -> bool:
         if beside is None and 0 <= i + step < len(marks) and marks[i + step][1] is None:
             beside = marks[i + step][0]
         if system not in _SIZE_SYSTEM_WORDS.values():
-            return True     # letter and waist/inseam sizes have no system word to check against
+            return True     # a letter size has no system word to check against
         if beside == system or (beside is None and named <= {system}):
             return True
     return False
@@ -500,11 +510,8 @@ def read_tag(data: Mapping[str, Any]) -> Dict[str, Any]:
     seen = [str(text) for text in data.get("visible_text") or [] if isinstance(text, (str, int, float))]
     size = data.get("size") if isinstance(data.get("size"), Mapping) else {}
     systems = {name.lower(): name for name in SIZE_SYSTEMS}
-    stated = {
-        "value": rules.normalize_size_value(size.get("value")),
-        "system": systems.get(str(size.get("system") or "").strip().lower()),
-        "source": "tag",
-    }
+    system = systems.get(str(size.get("system") or "").strip().lower())
+    stated = {"value": rules.normalize_size_value(size.get("value"), system), "system": system, "source": "tag"}
     readable = bool(stated["value"] and stated["system"]) and states_size(seen, stated)
     codes = stated_codes([data.get("style_code")], seen)
     return {"visible_text": seen, "size": stated if readable else None, "style_code": codes[0] if codes else None}

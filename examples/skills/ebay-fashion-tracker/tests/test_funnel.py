@@ -8,10 +8,12 @@ from datetime import timedelta
 import support
 from eft_core import plan, prompts, spec
 from eft_core.errors import (
-    ChatResult, CrusoeAuthError, CrusoeError, EbayAuthError, EbayBudgetExceeded, EbayGroupRequired,
-    EbayNotFound, EbayUnavailable,
+    ChatResult, CrusoeAuthError, CrusoeError, CrusoeUnavailable, EbayAuthError, EbayBudgetExceeded, EbayError,
+    EbayGroupRequired, EbayNotFound, EbayUnavailable,
 )
-from eft_core.funnel import MAX_PHOTO_BYTES, MAX_TAG_PHOTOS, REASON_BUDGET, STAGES, Funnel, fetch_image
+from eft_core.funnel import (
+    MAX_ATTEMPTS, MAX_PHOTO_BYTES, MAX_TAG_PHOTOS, REASON_BUDGET, STAGES, Funnel, fetch_image,
+)
 from eft_core.http import BlockedUrl, FakeTransport, Response, TransportError
 from eft_core.store import iso
 
@@ -108,6 +110,7 @@ class FakeCrusoe:
             "tag_read": NOTHING_ON_TAG,
         }
         self.calls = []
+        self.photos = []            # (bytes, allow_temp_file) for every photo that was wrapped
 
     def chat_json(self, role, system, parts, required=(), validator=None, max_tokens=None):
         self.calls.append({"role": role, "system": system, "parts": parts, "required": tuple(required)})
@@ -121,7 +124,8 @@ class FakeCrusoe:
         return ChatResult(data=copy.deepcopy(answer), model_requested="asked-" + role,
                           model_served="served-" + role, latency_ms=40, prompt_tokens=90, completion_tokens=10)
 
-    def image_part(self, source):
+    def image_part(self, source, allow_temp_file=True):
+        self.photos.append((source, allow_temp_file))
         return {"type": "image", "data": source, "mime": "image/jpeg"}
 
     def roles(self):
@@ -368,6 +372,18 @@ class Readers(unittest.TestCase):
         self.assertIsNone(prompts.validate_verify(answer))
         self.assertIn("fields.model", prompts.validate_verify({"fields": {"brand": {"verdict": "match"}}, "flags": []}))
 
+    def test_a_quote_has_to_be_a_phrase_not_a_copy_of_the_listing(self):
+        cap = prompts.MAX_QUOTE_CHARS
+        text = prompts.listing_text(detail(description="Sold by sneakerking_99. " + "Worn twice. " * 200 + "Z" * 300))
+        self.assertGreater(len(text), 2500)
+        answer = verify_answer(brand=("match", text), model=("mismatch", "Z" * (cap + 1)),
+                               colorway=("match", "Z" * cap))
+        fields, _ = prompts.read_verify(answer, text)
+        self.assertEqual(fields["brand"], {"verdict": "unknown", "quote": ""}, "the whole listing proves nothing")
+        self.assertEqual(fields["model"], {"verdict": "unknown", "quote": ""}, "one character over the limit")
+        self.assertEqual(fields["colorway"], {"verdict": "match", "quote": "Z" * cap})
+        self.assertIn("at most %d characters" % cap, prompts.verify(dunk_spec(), text)[0])
+
     def test_states_size_wants_the_value_as_its_own_token_in_the_same_system(self):
         us10 = {"value": "10", "system": "US"}
         for text in ("US 10", "Size: US10", "Men's size 10.", "Sz 10.0", "US 10 UK 9 EUR 44 CM 28",
@@ -381,6 +397,21 @@ class Readers(unittest.TestCase):
         self.assertTrue(prompts.states_size(["US M"], {"value": "M", "system": "alpha"}))
         self.assertFalse(prompts.states_size(["SLIM fit"], {"value": "M", "system": "alpha"}))
         self.assertFalse(prompts.states_size(["EU 44 2/3"], {"value": "44", "system": "EU"}))
+
+    def test_a_waist_and_inseam_size_is_stated_by_the_pair_however_it_is_spelled(self):
+        jeans = spec.normalize_spec({"size": "32x34"})["size"]
+        self.assertEqual(jeans["system"], "waist_inseam")
+        for text in ("Size: 32x34", "32X34", "32 x 34", "32/34", "W32 L34", "w32/l34", "32W x 34L", "32W 34L",
+                     "Levi's 501 32x34.", "tagged W32 L34, measures 31x33"):
+            self.assertTrue(prompts.states_size([text], jeans), text)
+        self.assertTrue(prompts.states_size(["W32", "L34"], jeans), "a tag printed on two lines")
+        for text in ("34x32", "Size 32", "Waist 32", "32x34.5", "132x34", "32x345", "32x34-36", "W32 L32", ""):
+            self.assertFalse(prompts.states_size([text], jeans), text)
+        # Reading pairs is only for a waist/inseam watch: a shoe listing's "10/12" is not a jeans size.
+        self.assertFalse(prompts.states_size(["10x12"], {"value": "10", "system": "US"}))
+        read = prompts.read_tag({"visible_text": ["LEVI'S", "W32 L34"], "style_code": None,
+                                 "size": {"value": "32x34", "system": "waist_inseam"}})
+        self.assertEqual(read["size"], {"value": "32X34", "system": "waist_inseam", "source": "tag"})
 
     def test_a_style_code_is_kept_only_if_it_was_read(self):
         seen = ["NIKE", "dd1391 100", "MADE IN VIETNAM"]
@@ -475,6 +506,18 @@ class RulesAndTriage(FunnelTest):
         self.assertEqual(result.reason, "mismatch:department")
         self.assertEqual(result.candidate["purge_at"], iso(self.clock() + timedelta(days=14)))
 
+    def test_a_kids_marker_that_is_the_watchs_own_brand_is_not_dropped_at_stage_zero(self):
+        watch = self.watch(brand="PS Paul Smith", model="Rex Sneaker", style_code=None, colorway=None)
+        aspects = {"Brand": ["PS Paul Smith"], "US Shoe Size": ["10"], "Department": ["Men"]}
+        self.crusoe.answers["verify"] = verify_answer(
+            brand=("match", "Brand: PS Paul Smith"), model=("match", "Rex Sneakers"))
+        listing = detail(title="PS Paul Smith Rex Sneakers White Leather Mens", aspects=aspects)
+        result = self.judge(listing, watch=watch)
+        self.assertEqual((result.decision, result.fields["department"]), ("alert", "match"))
+        # A real kids' size in the title of the same brand is still dropped before any call is spent.
+        kids = self.funnel.run(watch, [summary(2, title="PS Paul Smith Rex Sneakers Kids 4Y")])[0]
+        self.assertEqual((kids.decision, kids.reason), ("reject", "mismatch:department"))
+
     def test_triage_runs_in_batches_of_ten(self):
         self.crusoe.answers["triage"] = triage_all("no", "wrong_model")
         listings = [summary(n, title="Nike Dunk High %d" % n) for n in range(1, 24)]
@@ -529,6 +572,11 @@ class PhotoPrecheck(FunnelTest):
                          [b"my own photo", b"photo:https://i.ebayimg.com/images/g/1/s-l1600.jpg"])
         self.assertEqual(self.photos, ["https://i.ebayimg.com/images/g/1/s-l1600.jpg"])
         self.assertIn("photo_precheck", self.stages(result))
+
+    def test_only_the_users_own_photo_may_pass_through_a_temporary_file(self):
+        self.judge(watch=self.watch(reference_images=[self.reference_photo()]))
+        self.assertEqual(self.crusoe.photos, [
+            (b"my own photo", True), (b"photo:https://i.ebayimg.com/images/g/1/s-l1600.jpg", False)])
 
     def test_a_clear_title_skips_the_precheck(self):
         self.crusoe.answers["triage"] = triage_all("yes", "looks_right")
@@ -603,6 +651,40 @@ class ItemGroups(FunnelTest):
         self.assertEqual((result.decision, result.reason), ("reject", "mismatch:size"))
         self.assertNotIn("verify", self.crusoe.roles())
 
+    def test_two_variations_of_one_listing_are_one_candidate(self):
+        watch = self.watch()
+        self.ebay.groups["900"] = [variation(1, "9"), variation(2, "10"), variation(3, "11")]
+        results = self.funnel.run(watch, [as_summary(variation(1, "9")), as_summary(variation(3, "11"))])
+        self.assertEqual([(r.item_id, r.decision) for r in results], [("v1|900|1", "alert")])
+        self.assertEqual(self.ebay.calls, [("get_items_by_item_group", "900", "detail")], "the group is read once")
+        # A later search that shows the listing by another of its variations adds nothing.
+        self.assertEqual(self.funnel.run(watch, [as_summary(variation(3, "11"))]), [])
+        self.assertEqual(len(self.ebay.calls), 1)
+        self.assertEqual([row["code"] for row in self.store.list_candidates(watch["id"])], ["A1"])
+
+    def test_a_listing_tracked_under_one_variation_is_not_finished_under_another(self):
+        watch = self.watch()
+        self.ebay.groups["900"] = [variation(1, "9"), variation(2, "10"), variation(3, "11")]
+        self.crusoe.answers["verify"] = [CrusoeError("no valid answer from any model"), verify_answer(**READS_RIGHT)]
+        first = self.funnel.run(watch, [as_summary(variation(1, "9"))])[0]
+        self.assertEqual((first.decision, first.candidate["state"]), ("pending", "pending"))
+        second = self.funnel.run(watch, [as_summary(variation(3, "11"))])[0]
+        self.assertEqual((second.item_id, second.decision), ("v1|900|3", "alert"))
+        # The row left pending under the first id is not taken up again: the listing has its card.
+        self.assertEqual(self.funnel.run(watch, [as_summary(variation(1, "9"))]), [])
+        tracked = self.store.list_candidates(watch["id"], tracked=True)
+        self.assertEqual([row["item_id"] for row in tracked], ["v1|900|3"])
+
+    def test_a_parked_multi_size_listing_can_still_be_judged_again(self):
+        watch = self.watch()
+        parked = self.judge_group([variation(1, "9"), variation(2, "10", availability="OUT_OF_STOCK")], watch=watch)
+        self.assertEqual(parked.candidate["state"], "parked")
+        self.ebay.groups["900"] = [variation(1, "9"), variation(2, "10")]
+        # What the poller passes when the size is back: the stored snapshot under the row's own id.
+        shown = dict(parked.candidate["listing"], item_id=parked.candidate["item_id"])
+        again = self.funnel.run(watch, [shown], recheck=True)[0]
+        self.assertEqual((again.decision, again.candidate["id"]), ("alert", parked.candidate["id"]))
+
     def test_a_multi_variation_parent_reported_by_ebay_is_read_as_a_group(self):
         self.ebay.groups["900"] = [variation(1, "9"), variation(2, "10")]
         self.ebay.fail["v1|7|0"] = EbayGroupRequired("multi-variation parent", item_group_id="900", status=400,
@@ -647,6 +729,25 @@ class SpecCheckAndVerify(FunnelTest):
         self.assertEqual((result.decision, result.reason), ("reject", "mismatch:size"))
         self.assertEqual(self.crusoe.roles(), ["triage"])
         self.assertEqual(self.stages(result), ["rules", "title_triage", "detail_fetch", "spec_check", "decision"])
+
+    def test_a_size_typed_the_sellers_own_way_never_rejects_on_its_own(self):
+        # The aspect's own system repeated in the value is still a size code can read.
+        repeated = dict(detail()["aspects"], **{"US Shoe Size": ["US 10"]})
+        proven = self.judge(detail(1, aspects=repeated))
+        self.assertEqual((proven.decision, proven.sources["size"]), ("alert", "item specifics"))
+        # A value code cannot read proves nothing: the listing goes on to the model, which reads it.
+        custom = dict(detail()["aspects"], **{"US Shoe Size": ["Men's 10"]})
+        unread = self.judge(detail(2, aspects=custom))
+        self.assertEqual((unread.decision, unread.reason), ("maybe", "unproven:size"))
+        self.crusoe.answers["verify"] = verify_answer(size=("match", "US Shoe Size: Men's 10"), **READS_RIGHT)
+        read = self.judge(detail(3, aspects=custom))
+        self.assertEqual((read.decision, read.sources["size"]), ("alert", "listing text"))
+
+    def test_a_listing_for_men_and_women_is_not_a_department_mismatch(self):
+        both = dict(detail()["aspects"], Department=["Men", "Women"])
+        result = self.judge(detail(aspects=both))
+        self.assertEqual((result.decision, result.fields["department"]), ("alert", "match"))
+        self.assertEqual(result.sources["department"], "item specifics")
 
     def test_the_style_code_in_the_title_counts_and_says_so(self):
         aspects = {"Brand": ["Nike"], "US Shoe Size": ["10"], "Department": ["Men"]}
@@ -711,6 +812,56 @@ class SpecCheckAndVerify(FunnelTest):
         self.assertEqual(contradicted.reason, "unproven:size")
 
 
+class WaistAndInseam(FunnelTest):
+    """A jeans watch: the size is a waist and an inseam, written in more than one way."""
+
+    def setUp(self):
+        super().setUp()
+        self.crusoe.answers["verify"] = verify_answer(brand=("match", "Brand: Levi's"), model=("match", "501"))
+        wanted = spec.normalize_spec({"brand": "Levi's", "model": "501", "size": "32x34"})
+        self.assertEqual(spec.validate_spec(wanted), [])
+        self.jeans_watch = self.store.get_watch(self.store.create_watch("501s 32x34", wanted))
+
+    def jeans(self, n, description="Classic straight leg.", **specifics):
+        return detail(n, title="Levi's 501 Original Fit Jeans", description=description,
+                      aspects=dict({"Brand": ["Levi's"]}, **specifics))
+
+    def test_the_size_item_specific_proves_it(self):
+        listing = self.jeans(1, **{"Size": ["32x34"], "Waist Size": ["32 in"], "Inseam": ["34 in"]})
+        result = self.judge(listing, watch=self.jeans_watch)
+        self.assertEqual((result.decision, result.sources["size"]), ("alert", "item specifics"))
+        self.assertIn("size 32x34 (item specifics)", result.proof.lower())
+        self.assertNotIn("waist_inseam", result.proof, "the card names the size, not the size system's id")
+        for n, typed in enumerate(("W32 L34", "32 x 34", "32/34", "32W x 34L"), 2):
+            self.assertEqual(self.judge(self.jeans(n, Size=[typed]), watch=self.jeans_watch).decision, "alert", typed)
+
+    def test_a_waist_and_an_inseam_given_separately_prove_it(self):
+        result = self.judge(self.jeans(1, **{"Waist Size": ["32 in"], "Inseam": ["34 in"]}), watch=self.jeans_watch)
+        self.assertEqual((result.decision, result.sources["size"]), ("alert", "item specifics"))
+
+    def test_another_size_is_rejected_without_a_model_call(self):
+        result = self.judge(self.jeans(1, Size=["34x32"]), watch=self.jeans_watch)
+        self.assertEqual((result.decision, result.reason), ("reject", "mismatch:size"))
+        self.assertNotIn("verify", self.crusoe.roles())
+
+    def test_measurements_that_differ_from_the_wanted_size_do_not_reject_on_their_own(self):
+        measured = self.jeans(1, description="Tagged W32 L34, measures smaller.",
+                              **{"Waist Size": ["31 in"], "Inseam": ["33 in"]})
+        unread = self.judge(measured, watch=self.jeans_watch)
+        self.assertEqual((unread.decision, unread.reason), ("maybe", "unproven:size"))
+        # The model reads the label size in the description, and code checks the quote states it.
+        self.crusoe.answers["verify"] = verify_answer(
+            brand=("match", "Brand: Levi's"), model=("match", "501"), size=("match", "Tagged W32 L34"))
+        read = self.judge(measured, watch=self.jeans_watch, recheck=True)
+        self.assertEqual((read.decision, read.sources["size"]), ("alert", "listing text"))
+
+    def test_a_quote_of_another_pair_proves_nothing(self):
+        self.crusoe.answers["verify"] = verify_answer(
+            brand=("match", "Brand: Levi's"), model=("match", "501"), size=("match", "W34 L32"))
+        result = self.judge(self.jeans(1, description="W34 L32, great fade."), watch=self.jeans_watch)
+        self.assertEqual((result.decision, result.reason), ("maybe", "unproven:size"))
+
+
 class TagRead(FunnelTest):
     def tagged(self, count):
         urls = ["https://i.ebayimg.com/images/g/tag%d/s-l1600.jpg" % n for n in range(1, count + 1)]
@@ -726,6 +877,8 @@ class TagRead(FunnelTest):
         self.assertEqual(self.stages(result).count("tag_read"), 1)
         row = next(v for v in self.trace(result) if v["stage"] == "tag_read")
         self.assertEqual((row["latency_ms"], row["tokens"], row["model_served"]), (160, 400, "served-tag_read"))
+        self.assertEqual({allow_temp_file for _, allow_temp_file in self.crusoe.photos}, {False},
+                         "listing photos are passed through in memory")
 
     def test_a_tag_that_states_the_size_proves_it_and_stops_the_reading(self):
         self.crusoe.answers["tag_read"] = [
@@ -762,6 +915,18 @@ class TagRead(FunnelTest):
         self.assertEqual(len(self.crusoe.calls_for("tag_read")), 1)
         self.assertEqual(result.decision, "maybe")
 
+    def test_a_photo_too_large_to_send_as_it_is_is_skipped(self):
+        wrap = self.crusoe.image_part
+
+        def picky(source, allow_temp_file=True):
+            if b"tag1" in source:
+                raise CrusoeError("the image is 5.2 MB and could not be downscaled; the limit is 4 MB")
+            return wrap(source, allow_temp_file=allow_temp_file)
+        self.crusoe.image_part = picky
+        result = self.judge(self.tagged(2))
+        self.assertEqual(len(self.crusoe.calls_for("tag_read")), 1)
+        self.assertEqual((result.decision, result.reason), ("maybe", "unproven:size"), "not a failed judgment")
+
 
 class Failures(FunnelTest):
     def test_a_model_failure_leaves_the_listing_pending_then_quarantines_it(self):
@@ -793,6 +958,44 @@ class Failures(FunnelTest):
         self.assertEqual([(r.decision, r.candidate["attempts"]) for r in results], [("pending", 1)] * 2)
         self.assertEqual(self.ebay.calls, [])
         self.assertIsNone(results[0].candidate["listing"])
+
+    def test_a_crusoe_outage_is_not_held_against_the_listings(self):
+        watch = self.watch()
+        self.ebay.add(*[detail(n) for n in range(1, 31)])
+        listings = [summary(n) for n in range(1, 31)]
+        self.crusoe.answers["triage"] = CrusoeUnavailable("no usable answer for the triage role (HTTP 503)")
+        for _ in range(MAX_ATTEMPTS + 1):
+            results = self.funnel.run(watch, listings)
+            self.assertEqual({(r.decision, r.reason) for r in results}, {("pending", "model_unavailable")})
+            rows = {(r.candidate["state"], r.candidate["attempts"], r.candidate["tracked"]) for r in results}
+            self.assertEqual(rows, {("pending", 0, 0)}, "nothing is quarantined, however long the outage")
+        self.assertEqual(self.crusoe.roles(), ["triage"] * (MAX_ATTEMPTS + 1),
+                         "one call per run finds out; the other two batches are not sent")
+        self.assertEqual(self.ebay.calls, [])
+        self.assertEqual(self.trace(results[0])[-1]["rule_fired"], "model_unavailable")
+        # When Crusoe is back, the next search that returns the listings judges them.
+        self.crusoe.answers["triage"] = triage_all("yes", "looks_right")
+        self.assertEqual({r.decision for r in self.funnel.run(watch, listings)}, {"alert"})
+
+    def test_once_crusoe_is_found_down_nothing_more_is_fetched_in_that_run(self):
+        watch = self.watch(reference_images=[self.reference_photo()])
+        self.ebay.add(detail(1), detail(2), detail(3), detail(4))
+        self.crusoe.answers["triage"] = {"results": [
+            {"n": 1, "verdict": "yes", "reason": "looks_right"}, {"n": 2, "verdict": "yes", "reason": "looks_right"},
+            {"n": 3, "verdict": "yes", "reason": "looks_right"}, {"n": 4, "verdict": "maybe", "reason": "unclear"}]}
+        self.crusoe.answers["verify"] = [verify_answer(**READS_RIGHT), CrusoeUnavailable("rate limited on every model")]
+        results = self.funnel.run(watch, [summary(n) for n in (1, 2, 3, 4)])
+        self.assertEqual([(r.decision, r.reason) for r in results], [
+            ("alert", "all_required_fields_proven"), ("pending", "model_unavailable"),
+            ("pending", "model_unavailable"), ("pending", "model_unavailable")])
+        self.assertEqual(self.crusoe.roles(), ["triage", "verify", "verify"])
+        self.assertEqual([call[1] for call in self.ebay.calls], ["v1|1|0", "v1|2|0"], "no eBay call for 3 and 4")
+        self.assertEqual(self.photos, [], "and no photo download for 4")
+        self.assertEqual([r.candidate["attempts"] for r in results], [0, 0, 0, 0])
+        # The next run asks again: an outage is remembered for one run only.
+        self.crusoe.answers["verify"] = verify_answer(**READS_RIGHT)
+        again = self.funnel.run(watch, [summary(n) for n in (2, 3)])
+        self.assertEqual([r.decision for r in again], ["alert", "alert"])
 
     def test_malformed_model_output_is_treated_as_a_failure(self):
         self.crusoe.answers["verify"] = {"fields": "all good", "flags": []}
@@ -835,18 +1038,30 @@ class Failures(FunnelTest):
         self.assertEqual([call[1] for call in self.ebay.calls], ["v1|2|0", "v1|3|0", "v1|1|0"])
         self.assertEqual([r.item_id for r in results], ["v1|1|0", "v1|3|0", "v1|2|0"], "results keep search order")
 
-    def test_a_listing_ebay_cannot_return_is_unavailable_and_retried_three_times(self):
+    def test_a_listing_ebay_cannot_return_just_now_is_retried_for_as_long_as_a_search_returns_it(self):
         watch = self.watch()
+        self.ebay.add(detail(1), detail(2))
         self.ebay.fail["v1|1|0"] = EbayUnavailable("try again later", status=503)
-        first = self.funnel.run(watch, [summary()])[0]
-        self.assertEqual((first.decision, first.reason), ("pending", "ebay_unavailable"))
-        self.assertEqual((first.candidate["state"], first.candidate["attempts"]), ("unavailable", 1))
+        self.ebay.fail["v1|2|0"] = EbayError("eBay item lookup failed: HTTP 400", status=400)
+        for _ in range(MAX_ATTEMPTS + 2):
+            busy, unexplained = self.funnel.run(watch, [summary(1), summary(2)])
+            self.assertEqual((busy.decision, busy.reason), ("pending", "ebay_unavailable"))
+            self.assertEqual((busy.candidate["state"], busy.candidate["attempts"]), ("unavailable", 0))
+            self.assertEqual((unexplained.reason, unexplained.candidate["attempts"]), ("ebay_error", 0))
         self.assertNotIn("verify", self.crusoe.roles())
+        self.ebay.fail.clear()
+        recovered = self.funnel.run(watch, [summary(1), summary(2)])
+        self.assertEqual([(r.decision, r.candidate["state"]) for r in recovered], [("alert", "alerted")] * 2)
+
+    def test_a_listing_ebay_says_is_gone_is_left_alone_after_three_fetches(self):
+        watch = self.watch()
         self.ebay.fail["v1|1|0"] = EbayNotFound("gone", status=404, error_ids=[11001])
-        self.assertEqual(self.funnel.run(watch, [summary()])[0].reason, "ebay_not_found")
-        self.assertEqual(self.funnel.run(watch, [summary()])[0].candidate["attempts"], 3)
-        self.assertEqual(self.funnel.run(watch, [summary()]), [], "after three failed fetches it is left alone")
-        self.assertEqual(len(self.ebay.calls), 3)
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            [gone] = self.funnel.run(watch, [summary()])
+            self.assertEqual((gone.decision, gone.reason), ("pending", "ebay_not_found"))
+            self.assertEqual((gone.candidate["state"], gone.candidate["attempts"]), ("unavailable", attempt))
+        self.assertEqual(self.funnel.run(watch, [summary()]), [], "not found three times: the listing is gone")
+        self.assertEqual(len(self.ebay.calls), MAX_ATTEMPTS)
 
     def test_an_unavailable_listing_that_comes_back_is_judged(self):
         watch = self.watch()
@@ -932,6 +1147,19 @@ class StoreWrites(FunnelTest):
             self.assertIsNone(row[column], column)
         self.assertIsNotNone(row["purge_at"])
         self.assertNotIn("Brand: Nike", repr(self.trace(rejected)), "quotes from the earlier run are removed too")
+
+    def test_a_row_that_was_tracked_outlives_its_listing_when_it_is_rejected(self):
+        watch = self.watch()
+        ends = iso(self.clock() + timedelta(hours=2))
+        self.judge(detail(end_at=ends), watch=watch)
+        self.crusoe.answers["triage"] = triage_all("no", "wrong_model")
+        rejected = self.funnel.run(watch, [summary(end_at=ends)], recheck=True)[0]
+        self.assertEqual((rejected.candidate["state"], rejected.candidate["tracked"]), ("rejected", 0))
+        self.assertEqual(rejected.candidate["purge_at"], iso(self.clock() + timedelta(days=14)),
+                         "cards may be out for it, and they are found through this row")
+        # A listing that was never tracked is still forgotten the moment it ends.
+        never = self.funnel.run(watch, [summary(2, end_at=ends)])[0]
+        self.assertEqual((never.decision, never.candidate["purge_at"]), ("reject", ends))
 
     def test_an_empty_search_does_nothing(self):
         self.assertEqual(self.funnel.run(self.watch(), []), [])

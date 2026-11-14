@@ -24,6 +24,11 @@ What is stored follows eBay's license terms: a tracked candidate (alert, maybe, 
 small snapshot for its card, and everything else is an id, a state and a reason code. Photos are
 held in memory and never stored. The funnel neither enqueues alerts nor schedules refreshes:
 the tick does both.
+
+A failure that is not about the listing is not held against it. While Crusoe is unavailable, or
+eBay cannot return a listing just now, the listing stays pending and is taken up again by a
+later search. Only answers that no model gave in a usable form, and a listing eBay says does
+not exist, count toward MAX_ATTEMPTS.
 """
 from __future__ import annotations
 
@@ -35,7 +40,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from . import prompts, rules
 from .errors import (
-    ChatResult, CrusoeAuthError, CrusoeError, EbayAuthError, EbayBudgetExceeded, EbayError,
+    ChatResult, CrusoeAuthError, CrusoeError, CrusoeUnavailable, EbayAuthError, EbayBudgetExceeded, EbayError,
     EbayGroupRequired, EbayNotFound, EbayUnavailable,
 )
 from .http import BlockedUrl, TransportError, UrllibTransport
@@ -47,16 +52,21 @@ TRIAGE_BATCH = 10
 MAX_TAG_PHOTOS = 4
 PHOTO_HOST = "ebayimg.com"
 MAX_PHOTO_BYTES = 10 * 1024 * 1024
-# Failed attempts (a model with no valid answer, a listing eBay cannot return) before giving up.
+# Failed attempts (no usable answer from any model, a listing eBay says does not exist) before
+# giving up. An outage at Crusoe or eBay is not an attempt: it says nothing about the listing.
 MAX_ATTEMPTS = 3
-# How long an untracked row (rejected, pending, unavailable) is kept when the listing has no end date.
+# How long an untracked row (rejected, pending, unavailable) is kept when the listing has no end
+# date, and how long a row that was tracked is kept after a later run rejects it.
 UNTRACKED_KEEP_DAYS = 14
 
 # Stage names as they appear in the stored trace, in the order they run.
 STAGES = ("rules", "title_triage", "photo_precheck", "detail_fetch", "spec_check", "detail_verify",
           "tag_read", "decision")
 
-REASON_MODEL_ERROR = "model_error"
+REASON_MODEL_ERROR = "model_error"                 # the models answered, but not usably
+REASON_MODEL_UNAVAILABLE = "model_unavailable"     # Crusoe was rate limited or down
+# Reasons a listing is pending because no model judged it, whatever the cause.
+UNJUDGED_REASONS = (REASON_MODEL_ERROR, REASON_MODEL_UNAVAILABLE)
 REASON_QUARANTINED = "quarantined"
 REASON_BUDGET = "ebay_budget_exceeded"
 
@@ -75,6 +85,9 @@ SNAPSHOT_KEYS = (
     "current_bid", "min_next_bid", "bid_count", "reserve_met", "buying_options", "end_at", "condition",
     "availability", "relisted",
 )
+# Beside them the snapshot records when the whole listing was last read. Later refreshes that
+# only ask for prices and bids leave it alone, so it tells how old everything else is.
+FULL_READ_AT = "full_fetched_at"
 
 
 @dataclass
@@ -82,9 +95,10 @@ class FunnelResult:
     """What the funnel concluded about one listing.
 
     decision is alert, maybe, reject, parked or pending. "pending" means there is no verdict yet:
-    a model call failed (reason "model_error"), eBay could not return the listing (the stored
-    row's state is "unavailable"), or the eBay budget ran out before the listing was reached
-    (reason "ebay_budget_exceeded"; nothing was stored, so `candidate` is None).
+    no model gave a usable answer (reason "model_error"), Crusoe was unavailable (reason
+    "model_unavailable"), eBay could not return the listing (the stored row's state is
+    "unavailable"), or the eBay budget ran out before the listing was reached (reason
+    "ebay_budget_exceeded"; nothing was stored, so `candidate` is None).
 
     `summary` and `detail` are the API's own dicts, handed back for the caller to use in memory.
     Only `candidate` is what the store holds.
@@ -103,11 +117,16 @@ class FunnelResult:
 
 
 class _ModelFailed(Exception):
-    """A model stage produced no usable answer. Carries the stage name for the trace."""
+    """A model stage produced no usable answer. Carries the stage name for the trace.
 
-    def __init__(self, stage: str) -> None:
+    `outage` tells a service that could not be reached (rate limited or unavailable on every
+    model) from an answer that could not be used. Only the second says anything about the listing.
+    """
+
+    def __init__(self, stage: str, outage: bool = False) -> None:
         super().__init__(stage)
         self.stage = stage
+        self.outage = outage
 
 
 def _entry(verdict: str, source: Optional[str] = None, evidence: Optional[str] = None) -> Dict[str, str]:
@@ -193,9 +212,14 @@ def fetch_image(url: str, transport: Any = None) -> bytes:
     return response.body
 
 
-def snapshot(listing: Mapping[str, Any]) -> Dict[str, Any]:
-    """The part of a listing that is stored while a candidate is tracked."""
-    return {key: listing.get(key) for key in SNAPSHOT_KEYS}
+def snapshot(listing: Mapping[str, Any], read_at: str) -> Dict[str, Any]:
+    """The part of a listing that is stored while a candidate is tracked.
+
+    `read_at` is when `listing`, a whole listing and not a price-and-bids refresh, was read.
+    """
+    kept = {key: listing.get(key) for key in SNAPSHOT_KEYS}
+    kept[FULL_READ_AT] = read_at
+    return kept
 
 
 def _unfinished(row: Mapping[str, Any]) -> bool:
@@ -228,7 +252,7 @@ def _stated_sizes(detail: Mapping[str, Any], spec: Mapping[str, Any]) -> str:
     """The sizes a listing's item specifics state in the watch's own size system: 'US 10'."""
     system = (spec.get("size") or {}).get("system")
     stated = rules.sizes_from_aspects(detail.get("aspects") or {})
-    return ", ".join(_size_label(size) for size in stated if size["system"] == system)
+    return ", ".join(dict.fromkeys(_size_label(size) for size in stated if size["system"] == system))
 
 
 def _pick_variation(
@@ -338,6 +362,8 @@ class Funnel:
         self.crusoe = crusoe
         self.store = store
         self.image_fetcher = image_fetcher or fetch_image
+        # Set by the first model call of a run that finds Crusoe unavailable. See `_require_models`.
+        self._outage = False
 
     def run(self, watch: Mapping[str, Any], summaries: Sequence[Dict[str, Any]],
             recheck: bool = False) -> List[FunnelResult]:
@@ -345,7 +371,8 @@ class Funnel:
 
         Listings this watch has already judged are skipped unless `recheck` is set. A stored row
         without a verdict (a model call or the detail fetch failed last time) is not "judged":
-        it is taken up again whenever a search returns the listing, up to MAX_ATTEMPTS times.
+        it is taken up again whenever a search returns the listing, until it has a verdict or
+        has failed MAX_ATTEMPTS times for a reason of its own.
         A re-evaluation that fails leaves the earlier verdict and its snapshot as they were.
 
         CrusoeAuthError and EbayAuthError propagate, and then nothing from this run is stored.
@@ -353,6 +380,7 @@ class Funnel:
         listings not reached come back as pending results without a candidate row.
         """
         spec = normalize_spec(watch["spec"])
+        self._outage = False
         cases = self._open_cases(watch["id"], summaries, recheck)
         for case in cases:
             self._check_title(spec, case)
@@ -371,22 +399,41 @@ class Funnel:
                     for case in cases]
 
     def _open_cases(self, watch_id: int, summaries: Sequence[Dict[str, Any]], recheck: bool) -> List[_Case]:
-        """One case per listing this run should judge, in the order the search returned them."""
+        """One case per listing this run should judge, in the order the search returned them.
+
+        A multi-size listing is one listing, whichever of its variations a search happens to
+        show. It is taken once per run, and not at all while the watch tracks it under the
+        id of another variation: two cards for one listing would help nobody.
+        """
         seen = self.store.seen_item_ids(watch_id)
+        tracked_groups = self._tracked_groups(watch_id)
         started = self.store.now_iso()
         cases: List[_Case] = []
         taken = set()
         for summary in summaries:
-            item_id = summary["item_id"]
-            if item_id in taken:
+            item_id, group_id = summary["item_id"], summary.get("item_group_id")
+            key = ("group", group_id) if group_id else ("item", item_id)
+            if key in taken:
                 continue
-            taken.add(item_id)
+            taken.add(key)
             row = self.store.get_candidate(watch_id, item_id) if item_id in seen else None
-            if row is not None and not recheck and not _unfinished(row):
+            judged = row is not None and not _unfinished(row)
+            if judged and not recheck:
+                continue
+            if not judged and tracked_groups.get(group_id or "", item_id) != item_id:
                 continue
             cases.append(_Case(summary=summary, row=row, attempts=row["attempts"] if row else 0,
                                fetched_at=started))
         return cases
+
+    def _tracked_groups(self, watch_id: int) -> Dict[str, str]:
+        """Item group id -> the item id under which this watch tracks that multi-size listing."""
+        groups: Dict[str, str] = {}
+        for row in self.store.list_candidates(watch_id, tracked=True):
+            group_id = (row["listing"] or {}).get("item_group_id")
+            if group_id:
+                groups[group_id] = row["item_id"]
+        return groups
 
     # ---- stage 0: rules ----------------------------------------------------------
 
@@ -418,7 +465,7 @@ class Funnel:
                 answer = self._ask("title_triage", "triage", prompts.triage(spec, titles), prompts.validate_triage)
             except _ModelFailed as failure:
                 for case in batch:
-                    self._model_failed(spec, case, failure.stage)
+                    self._model_failed(spec, case, failure)
                 continue
             for case, (verdict, reason) in zip(batch, prompts.read_triage(answer.data, len(batch))):
                 case.note("title_triage", answer, fields={"verdict": verdict, "reason": reason}, share=len(batch))
@@ -431,8 +478,12 @@ class Funnel:
 
     def _evaluate(self, spec: Mapping[str, Any], case: _Case, reference: Optional[Dict[str, Any]]) -> None:
         """Take one listing that passed triage through the remaining stages and the decision rule."""
+        precheck = case.triage == "maybe" and reference is not None
         try:
-            if case.triage == "maybe" and reference is not None:
+            # Checked before anything is fetched: no photo download and no eBay call is spent
+            # on a listing that no model can read afterwards.
+            self._require_models("photo_precheck" if precheck else "detail_verify")
+            if precheck:
                 self._photo_precheck(spec, case, reference)
             if case.open:
                 self._fetch_detail(spec, case)
@@ -442,7 +493,7 @@ class Funnel:
                 self._verify(spec, case)
                 self._decide(spec, case)
         except _ModelFailed as failure:
-            self._model_failed(spec, case, failure.stage)
+            self._model_failed(spec, case, failure)
 
     def _photo_precheck(self, spec: Mapping[str, Any], case: _Case, reference: Dict[str, Any]) -> None:
         """Stage 2: the title was unclear, so compare the search-result photo with the user's own.
@@ -465,7 +516,14 @@ class Funnel:
             case.photo = seen
 
     def _fetch_detail(self, spec: Mapping[str, Any], case: _Case) -> None:
-        """Stage 3: spend one eBay call on the listing, or on all variations of a multi-size one."""
+        """Stage 3: spend one eBay call on the listing, or on all variations of a multi-size one.
+
+        A listing eBay cannot return stays pending in state "unavailable". Only "not found"
+        counts as an attempt, and three of those end the retries: the listing is gone. Any
+        other failure (try again later, a network error, an answer eBay gave no reason for)
+        may have nothing to do with the listing, so it is fetched again for as long as a
+        search returns it. The search window is held until then, and reaches back 72 hours at most.
+        """
         try:
             listings, case.multi_size = self._load_listing(case.summary)
             if not listings:
@@ -476,7 +534,7 @@ class Funnel:
             reason = ("ebay_not_found" if isinstance(problem, EbayNotFound)
                       else "ebay_unavailable" if isinstance(problem, EbayUnavailable) else "ebay_error")
             case.note("detail_fetch", rule=reason)
-            case.attempts += 1
+            case.attempts += int(isinstance(problem, EbayNotFound))
             case.close("pending", reason, state="unavailable")
             return
         case.fetched_at = self.store.now_iso()
@@ -585,10 +643,14 @@ class Funnel:
         output" true whichever client is plugged in.
         """
         system, parts, required = prompt
+        self._require_models(stage)
         try:
             answer = self.crusoe.chat_json(role, system, parts, required=required, validator=validator)
         except CrusoeAuthError:
             raise
+        except CrusoeUnavailable as problem:
+            self._outage = True
+            raise _ModelFailed(stage, outage=True) from problem
         except CrusoeError as problem:
             raise _ModelFailed(stage) from problem
         data = answer.data
@@ -596,14 +658,29 @@ class Funnel:
             raise _ModelFailed(stage)
         return answer
 
+    def _require_models(self, stage: str) -> None:
+        """Fail `stage` at once when Crusoe was found unavailable earlier in this run.
+
+        The call that found out has already been through every candidate model with full
+        backoff. Asking again for each remaining listing would hold the run up for minutes
+        and learn nothing new.
+        """
+        if self._outage:
+            raise _ModelFailed(stage, outage=True)
+
     @staticmethod
-    def _model_failed(spec: Mapping[str, Any], case: _Case, stage: str) -> None:
+    def _model_failed(spec: Mapping[str, Any], case: _Case, failure: _ModelFailed) -> None:
         """No valid answer: leave the listing pending for a later run, and stop after MAX_ATTEMPTS.
 
-        A listing that keeps failing is moved to "maybe" so a person sees it. It never alerts on
-        an answer that was not valid, and it is never silently dropped.
+        A listing whose answers keep coming back unusable is moved to "maybe" so a person sees
+        it. It never alerts on an answer that was not valid, and it is never silently dropped.
+        An outage is not counted: it would otherwise quarantine every listing in the window.
         """
-        case.note(stage, rule=REASON_MODEL_ERROR)
+        if failure.outage:
+            case.note(failure.stage, rule=REASON_MODEL_UNAVAILABLE)
+            case.close("pending", REASON_MODEL_UNAVAILABLE)
+            return
+        case.note(failure.stage, rule=REASON_MODEL_ERROR)
         case.attempts += 1
         if case.attempts < MAX_ATTEMPTS:
             case.close("pending", REASON_MODEL_ERROR)
@@ -611,31 +688,38 @@ class Funnel:
             case.unproven = rules.decide(spec["requirements"], case.verdicts()).unproven
             case.close("maybe", REASON_QUARANTINED)
 
-    def _image_part(self, load: Callable[[], bytes]) -> Optional[Dict[str, Any]]:
+    def _image_part(self, load: Callable[[], bytes], allow_temp_file: bool) -> Optional[Dict[str, Any]]:
         """Load a photo and wrap it for a model call, or return None when it cannot be used.
 
-        A photo that will not download or convert is skipped: it is a missing piece of evidence,
-        not a failed judgment.
+        A photo that will not download, is too large or is in a format the models do not take
+        is skipped: it is a missing piece of evidence, not a failed judgment.
         """
         try:
-            return self.crusoe.image_part(load())
+            return self.crusoe.image_part(load(), allow_temp_file=allow_temp_file)
         except CrusoeAuthError:
             raise
         except (TransportError, BlockedUrl, OSError, CrusoeError):
             return None
 
     def _photo(self, url: Optional[str]) -> Optional[Dict[str, Any]]:
-        """A listing photo, from a URL the eBay API returned. Held in memory only."""
+        """A listing photo, from a URL the eBay API returned.
+
+        It is held in memory only: eBay content is never written to disk, not even to the
+        temporary file an image converter would need, so the bytes go to the model as they are.
+        """
         if not url:
             return None
-        return self._image_part(lambda: self.image_fetcher(url))
+        return self._image_part(lambda: self.image_fetcher(url), allow_temp_file=False)
 
     def _reference_photo(self, spec: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
-        """The user's own reference photo, or None when the spec has none that can be read."""
+        """The user's own reference photo, or None when the spec has none that can be read.
+
+        It is the user's file, so it may be downscaled on the way (which uses a temporary file).
+        """
         paths = spec.get("reference_images") or []
         if not paths:
             return None
-        return self._image_part(Path(paths[0]).expanduser().read_bytes)
+        return self._image_part(Path(paths[0]).expanduser().read_bytes, allow_temp_file=True)
 
     # ---- recording ---------------------------------------------------------------
 
@@ -653,15 +737,17 @@ class Funnel:
         elif tracked:
             listing = case.detail or case.summary
             end = parse_iso(listing.get("end_at"))
+            # A stored snapshot that stood in for a search result keeps the time it was really read.
+            read_at = listing.get(FULL_READ_AT) or case.fetched_at
             self.store.upsert_candidate(
                 watch_id, item_id, case.state, reason=case.reason, attempts=case.attempts, tracked=True,
-                listing=snapshot(listing), legacy_item_id=listing.get("legacy_item_id"),
+                listing=snapshot(listing, read_at), legacy_item_id=listing.get("legacy_item_id"),
                 end_at=iso(end) if end else None, fetched_at=case.fetched_at, purge_at=None,
             )
         else:
             self.store.upsert_candidate(
                 watch_id, item_id, case.state, reason=case.reason, attempts=case.attempts,
-                end_at=None, purge_at=self._purge_at(case.summary),
+                end_at=None, purge_at=self._purge_at(case.summary, was_tracked=bool(earlier and earlier["tracked"])),
             )
             if earlier is not None:
                 self.store.purge_listing_data(earlier["id"])
@@ -671,9 +757,14 @@ class Funnel:
             self.store.add_verdict(row["id"], **dict(step, fields=fields))
         return row
 
-    def _purge_at(self, summary: Mapping[str, Any]) -> str:
-        """When an untracked row is forgotten: when the listing ends, or after two weeks."""
-        end = parse_iso(summary.get("end_at"))
+    def _purge_at(self, summary: Mapping[str, Any], was_tracked: bool) -> str:
+        """When an untracked row is forgotten: when the listing ends, or after two weeks.
+
+        A row that was tracked until now always gets the two weeks. Cards may have been sent
+        for it, and the record of where they are hangs on this row: it has to outlive the
+        listing for as long as it takes to remove the listing's data from them.
+        """
+        end = None if was_tracked else parse_iso(summary.get("end_at"))
         return iso(end or self.store.clock() + timedelta(days=UNTRACKED_KEEP_DAYS))
 
     @staticmethod

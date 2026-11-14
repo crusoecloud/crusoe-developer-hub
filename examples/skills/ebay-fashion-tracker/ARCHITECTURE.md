@@ -292,7 +292,7 @@ The sections above describe the design. This is what the code in this folder doe
 | Adding a watch | From a photo, a description, or an eBay item, product or search link (parsed, never fetched) | Tracking one exact listing (a pinned watch) |
 | Matching funnel | Stages 0 to 6 and the decision rule; quotes checked against listing text; item groups resolved to the wanted size | Photo check against the visual signature when there is no reference photo |
 | Crusoe models | Role-based selection from the live catalog with fallbacks, served-model check, JSON validation with one repair, client-side rate limit | Reasoning-effort control per model; the quality-gate evaluation set |
-| eBay access | Application token, search, item, legacy id, item group; daily cap and a ledger by purpose | Per-watch call caps; image search |
+| eBay access | Application token, search, item, legacy id, item group; a daily cap, a per-watch daily allowance for refresh and detail calls, and a ledger by purpose | Image search |
 | Poller | Windowed search, six-hourly sweep, tracked-listing refresh, ended and unavailable handling, parked rechecks, style-code-only mode when the models are down, safety notices, heartbeat | Relist threading; a packaged always-on host mode |
 | Alerts | Slack direct-message cards with threads, six-hour stripping and "Ended" rewrites; Pushover with a six-hour expiry; quiet hours; a daily digest | Slack scheduled reminders; phone-action links; a daily cap on urgent alerts |
 | Setup and upkeep | `eft doctor` for env, Crusoe, eBay and alerts; launchd install and a cron line elsewhere; `eft uninstall`; the deletion-notice Worker | `eft doctor sleep`; the queue-folder handoff for sandboxed sessions |

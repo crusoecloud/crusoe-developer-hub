@@ -10,11 +10,14 @@ from unittest import mock
 import support
 from eft_core import alerts, plan, spec
 from eft_core.alerts import Notifier
+from eft_core.crusoe import CrusoeClient
+from eft_core.ebay import EbayClient
 from eft_core.errors import (
     ChatResult, CrusoeAuthError, CrusoeError, CrusoeUnavailable, EbayAuthError, EbayBudgetExceeded,
-    EbayNotFound, EbayUnavailable,
+    EbayNotFound, EbayUnavailable, EbayUnreachable,
 )
-from eft_core.http import FakeTransport, Response, json_response
+from eft_core.funnel import snapshot
+from eft_core.http import FakeTransport, Response, TransportError, json_response
 from eft_core.store import iso, parse_iso
 from eft_core.tick import LAST_TICK_KEY, cadence_minutes, next_refresh, run_tick, window_start
 
@@ -107,7 +110,7 @@ class FakeCrusoe:
         return ChatResult(data=copy.deepcopy(answer), model_requested="served-" + role, model_served=served,
                           swapped=self.swap_to is not None, latency_ms=40, prompt_tokens=90, completion_tokens=10)
 
-    def image_part(self, source):
+    def image_part(self, source, allow_temp_file=True):
         return {"type": "image", "data": source, "mime": "image/jpeg"}
 
 
@@ -119,6 +122,7 @@ class FakeEbay:
         self.fail = {}              # item id -> exceptions raised by get_item, one per call
         self.search_fail = []       # exceptions raised by search, one per call (None lets a call through)
         self.search_error = None    # raised by every search
+        self.down = None            # raised by every call: eBay cannot be reached at all
         self.endless = False        # every page says another one follows
         self.calls = []
 
@@ -128,7 +132,7 @@ class FakeEbay:
 
     def search(self, q=None, **kwargs):
         self.calls.append(("search", q, kwargs))
-        problem = self.search_error or (self.search_fail.pop(0) if self.search_fail else None)
+        problem = self.down or self.search_error or (self.search_fail.pop(0) if self.search_fail else None)
         if problem is not None:
             raise problem
         items = [{key: value for key, value in listing.items() if key not in DETAIL_ONLY_KEYS}
@@ -140,7 +144,7 @@ class FakeEbay:
 
     def get_item(self, item_id, *, compact=False, purpose="detail"):
         self.calls.append(("get_item", item_id, {"compact": compact, "purpose": purpose}))
-        problem = self.fail[item_id].pop(0) if self.fail.get(item_id) else None
+        problem = self.down or (self.fail[item_id].pop(0) if self.fail.get(item_id) else None)
         if problem is not None:
             raise problem
         listing = copy.deepcopy(self.live[item_id])
@@ -229,6 +233,14 @@ class TickTest(unittest.TestCase):
 
     def alerts(self, kind=None):
         return [row for row in self.store.alerts_by_status() if kind is None or row["kind"] == kind]
+
+    def retry(self, row):
+        """What the poller remembers about a tracked listing it could not read, or None."""
+        return self.store.kv_get("candidate:%d:refresh" % row["id"])
+
+    def reads_made(self):
+        """Today's reads by watch and purpose, as the poller counts them."""
+        return self.store.ledger_breakdown("ebay_watch")
 
 
 class Cadence(unittest.TestCase):
@@ -603,6 +615,29 @@ class Refresh(TickTest):
         self.assertEqual(self.tick()["purged"], 1)
         self.assertIsNone(self.store.get_candidate_by_id(row["id"]))
 
+    def test_an_ended_rewrite_that_slack_refused_is_made_on_the_next_tick(self):
+        row = self.first_alert(detail())
+        gone = EbayNotFound("eBay item lookup failed: HTTP 404, error 11001", status=404)
+        self.ebay.fail["v1|1|0"] = [gone, gone]
+        del self.ebay.live["v1|1|0"]
+        self.clock.advance(hours=6, minutes=1)
+        self.tick()                               # the card loses its price at six hours; not found once
+        self.assertIn("ebay.com/itm", words(self.wire.updates()[-1]), "the six-hour stub keeps title and link")
+
+        self.wire.transport.handler = lambda *request: json_response({"ok": False, "error": "internal_error"})
+        self.clock.advance(hours=1, minutes=1)
+        report = self.tick()                      # not found a second time, and Slack refuses the rewrite
+        self.assertEqual((report["ended"], report["problems"]), (1, ["alerts: slack: internal_error"]))
+
+        self.wire.transport.handler = self.wire.handle
+        self.clock.advance(minutes=5)
+        self.assertEqual(self.tick()["expired"], 1)
+        ended = self.wire.updates()[-1]
+        self.assertIn("has ended", words(ended))
+        for gone_text in ("Nike Dunk", "ebay.com/itm"):
+            self.assertNotIn(gone_text, words(ended))
+        self.assertEqual([message["has_listing_data"] for message in self.store.messages_for_candidate(row["id"])], [0])
+
     def test_an_auction_past_its_end_is_confirmed_with_the_full_listing(self):
         ends = self.clock() + timedelta(minutes=30)
         self.first_alert(auction(ends_at=iso(ends)))
@@ -640,6 +675,93 @@ class Refresh(TickTest):
         self.assertNotIn("120.00", words(stub))
         self.assertIn("removed after six hours", words(stub))
 
+    def test_a_compact_read_leaves_the_time_of_the_last_full_read_alone_and_the_next_read_is_in_full(self):
+        row = self.first_alert(detail())
+        found_at = iso(self.clock())
+        self.assertEqual(row["listing"]["full_fetched_at"], found_at)
+        self.clock.advance(hours=5, minutes=1)
+        self.tick()
+        row = self.candidate()
+        self.assertEqual(self.ebay.reads("refresh"), [("v1|1|0", True)])
+        self.assertEqual((row["fetched_at"], row["listing"]["full_fetched_at"]), (iso(self.clock()), found_at))
+
+        self.ebay.live["v1|1|0"].update(shipping=usd("14.00"), condition="New with box")
+        self.clock.advance(hours=5, minutes=1)            # ten hours after the full read
+        self.tick()
+        row = self.candidate()
+        self.assertEqual(self.ebay.reads("refresh")[-1], ("v1|1|0", False), "shipping and condition were too old")
+        self.assertEqual(row["listing"]["full_fetched_at"], iso(self.clock()))
+        self.assertEqual((row["listing"]["shipping"], row["listing"]["condition"]), (usd("14.00"), "New with box"))
+
+    def test_a_card_built_from_a_snapshot_last_read_in_full_long_ago_leaves_out_what_only_that_read_returns(self):
+        # A match whose prices a compact read has just refreshed, nine hours after its last full
+        # read, and which has no card yet: a tick died before it could queue one.
+        watch = self.watch()
+        listing = detail(shipping=usd("12.00"), condition="New with box",
+                         end_at=iso(self.clock() + timedelta(days=2)))
+        self.ebay.list(listing)
+        row = self.store.upsert_candidate(
+            watch["id"], "v1|1|0", "alerted", tracked=True, fetched_at=iso(self.clock()),
+            listing=snapshot(listing, iso(self.clock() - timedelta(hours=9))), end_at=listing["end_at"],
+            next_refresh_at=iso(self.clock() + timedelta(hours=5)))
+        self.tick()
+        [alert] = self.alerts()
+        payload = alert["payload"]
+        self.assertEqual((alert["status"], payload["code"], payload["as_of"]), ("sent", row["code"], iso(self.clock())))
+        self.assertEqual(payload["price"], usd("120.00"))
+        self.assertEqual((payload["shipping"], payload["condition"], payload["end_at"]), (None, None, None))
+        card = words(self.wire.posts())
+        self.assertIn("$120.00", card)
+        for stale in ("$12.00", "Shipping", "New with box", "scheduled end"):
+            self.assertNotIn(stale, card)
+        self.assertEqual(self.ebay.reads("refresh"), [], "no call is made while the outbox is being filled")
+
+    def test_a_tick_that_cannot_reach_ebay_holds_nothing_against_the_listings_that_were_due(self):
+        self.watch("One")
+        self.watch("Two", size="US 11")
+        self.ebay.list(detail(1), detail(2, aspects={"Brand": ["Nike"], "US Shoe Size": ["11"], "Department": ["Men"]}))
+        self.tick()
+        before = [self.candidate(1, 1), self.candidate(2, 2)]
+        calls = len(self.ebay.calls)
+        self.ebay.down = EbayUnreachable("eBay item lookup failed: GET api.ebay.com failed: timed out")
+        self.clock.advance(hours=5, minutes=1)
+        report = self.tick()
+        self.assertEqual(len(self.ebay.calls), calls + 1, "the first failure ends the eBay calls of this tick")
+        self.assertEqual(report["problems"], ["ebay: eBay item lookup failed: GET api.ebay.com failed: timed out"])
+        self.assertEqual((report["unavailable"], report["ended"], report["searched"]), (0, 0, 0))
+        for was in before:
+            now = self.store.get_candidate_by_id(was["id"])
+            self.assertEqual((now["state"], now["next_refresh_at"]), ("alerted", was["next_refresh_at"]))
+            self.assertIsNone(self.retry(now))
+        # Each watch read both listings when it judged them. The failed read is not counted.
+        self.assertEqual(self.reads_made(), {"1:detail": 2, "2:detail": 2})
+
+        self.ebay.down = None
+        self.clock.advance(minutes=5)
+        report = self.tick()
+        self.assertEqual((report["refreshed"], report["problems"]), (2, []))
+
+    def test_ebay_going_out_of_reach_in_the_middle_of_a_watch_costs_one_call_not_one_per_listing(self):
+        self.watch("One")
+        self.watch("Two", size="US 11")
+        self.ebay.list(*[detail(n) for n in range(1, 6)])
+        limited = EbayUnreachable("eBay item lookup failed: HTTP 429", status=429)
+        self.ebay.fail = {"v1|%d|0" % n: [limited] for n in range(1, 6)}
+        report = self.tick()
+        self.assertEqual(len(self.ebay.reads("detail")), 1, "the other four listings are not asked for")
+        self.assertEqual(len(self.ebay.searches()), 1, "and the second watch is not searched")
+        self.assertEqual(report["problems"], [
+            "ebay: a listing could not be read (ebay_unavailable)",
+            "ebay: eBay item lookup failed: HTTP 429 (no more eBay calls were made in this tick)"])
+        rows = self.store.list_candidates()
+        self.assertEqual({(row["state"], row["attempts"], row["tracked"]) for row in rows}, {("unavailable", 0, 0)})
+        self.assertEqual(self.reads_made(), {})
+        for listing_fails in self.ebay.fail.values():
+            del listing_fails[:]
+        self.clock.advance(minutes=10)
+        self.tick()
+        self.assertEqual({row["state"] for row in self.store.list_candidates(1)}, {"alerted"})
+
 
 class ParkedListings(TickTest):
     def test_a_parked_listing_alerts_when_a_sweep_finds_its_price_at_the_ceiling(self):
@@ -652,8 +774,8 @@ class ParkedListings(TickTest):
         self.assertEqual(self.ebay.searches("sweep"), [], "no sweep in the tick of the first search")
 
         self.clock.advance(hours=5, minutes=5)
-        self.tick()                                   # refreshed, still over the ceiling
-        self.assertEqual(self.alerts(), [])
+        self.tick()                                   # nothing to do: a parked listing waits for the sweep
+        self.assertEqual((self.alerts(), self.ebay.reads("refresh")), ([], []))
         self.ebay.live["v1|1|0"]["price"] = usd("150.00")
         self.clock.advance(hours=1)
         report = self.tick()                          # six hours after the first search: the sweep
@@ -664,6 +786,7 @@ class ParkedListings(TickTest):
 
         row = self.candidate()
         self.assertEqual((row["state"], row["listing"]["price"]), ("alerted", usd("150.00")))
+        self.assertEqual(row["next_refresh_at"], iso(self.clock() + timedelta(hours=5)), "read like any match now")
         [alert] = self.alerts()
         self.assertEqual((alert["kind"], alert["status"]), ("price", "sent"))
         self.assertEqual(alert["dedupe_key"], "price:%d:%s" % (row["id"], iso(self.clock())))
@@ -680,7 +803,7 @@ class ParkedListings(TickTest):
         self.ebay.list(detail(price=usd("250.00")))
         self.tick()
         self.ebay.live["v1|1|0"]["price"] = usd("150.00")
-        self.clock.advance(hours=5, minutes=5)
+        self.clock.advance(hours=6, minutes=5)          # the sweep finds the new price
         with mock.patch.object(self.store, "enqueue_alert", side_effect=RuntimeError("died here")):
             self.tick()
         self.assertEqual(self.candidate()["state"], "alerted", "the funnel had already recorded its verdict")
@@ -707,15 +830,77 @@ class ParkedListings(TickTest):
         self.assertEqual([alert["kind"] for alert in self.alerts()], ["new", "restock", "restock"])
         self.assertEqual(len(self.wire.posts()), 3)
 
-    def test_a_refresh_that_finds_the_price_at_the_ceiling_alerts_without_waiting_for_the_sweep(self):
+    def test_a_listing_rejected_after_its_card_went_out_is_taken_off_the_card_and_its_row_kept(self):
+        self.watch()
+        ends = iso(self.clock() + timedelta(hours=2))
+        self.ebay.list(detail(end_at=ends))
+        self.tick()
+        row = self.candidate()
+        self.assertEqual(len(self.wire.posts()), 1)
+        for availability in ("OUT_OF_STOCK", "IN_STOCK"):            # sold out, then back
+            self.ebay.live["v1|1|0"]["availability"] = availability
+            self.clock.advance(minutes=20)
+            self.store.update_candidate(row["id"], next_refresh_at=iso(self.clock()))
+            if availability == "IN_STOCK":                            # ...and judged again, this time as no match
+                self.crusoe.answers["triage"] = {"results": [{"n": 1, "verdict": "no", "reason": "wrong_model"}]}
+            self.tick()
+
+        row = self.candidate()
+        self.assertEqual((row["state"], row["reason"], row["tracked"]), ("rejected", "triage:wrong_model", 0))
+        self.assertEqual(row["purge_at"], iso(self.clock() + timedelta(days=14)), "not when the listing ends")
+        self.assertEqual(self.alerts("restock"), [])
+        rewritten = self.wire.updates()[-1]
+        self.assertEqual((rewritten["channel"], rewritten["ts"]), ("D0DM", "1700000000.000001"))
+        self.assertIn("has ended", words(rewritten))
+        for gone in ("Nike Dunk", "120.00", "ebay.com/itm"):
+            self.assertNotIn(gone, words(rewritten))
+        self.assertEqual([message["has_listing_data"] for message in self.store.messages_for_candidate(row["id"])], [0])
+
+        self.clock.advance(hours=2, minutes=30)                       # the listing has ended by now
+        self.assertEqual(self.tick()["purged"], 0)
+        self.assertEqual(len(self.store.messages_for_candidate(row["id"])), 1, "the card can still be found")
+
+    def test_a_parked_listing_is_left_to_the_sweep_and_never_read_on_its_own_while_a_sweep_returns_it(self):
         self.watch()
         self.ebay.list(detail(price=usd("250.00")))
         self.tick()
-        self.ebay.live["v1|1|0"]["price"] = usd("175.00")
-        self.clock.advance(hours=5, minutes=5)
+        self.assertEqual(self.candidate()["next_refresh_at"], iso(self.clock() + timedelta(hours=24)))
+        for _ in range(24):                               # a day of hourly ticks, four sweeps among them
+            self.clock.advance(hours=1)
+            self.tick()
+        self.assertEqual(len(self.ebay.searches("sweep")), 4)
+        self.assertEqual(self.ebay.reads("refresh"), [], "each sweep re-priced it and put its own read off")
+        self.assertEqual(self.candidate()["next_refresh_at"], iso(self.clock() + timedelta(hours=24)))
+        self.assertEqual(self.reads_made(), {}, "a sweep is not one of the watch's counted reads")
+
+    def test_a_parked_listing_the_sweep_no_longer_returns_is_read_once_a_day_which_is_how_its_end_is_noticed(self):
+        self.watch()
+        self.ebay.list(detail(price=usd("250.00")))
         self.tick()
-        self.assertEqual([alert["kind"] for alert in self.alerts()], ["price"])
-        self.assertEqual(self.candidate()["state"], "alerted")
+        gone = EbayNotFound("eBay item lookup failed: HTTP 404, error 11001", status=404)
+        self.ebay.fail["v1|1|0"] = [gone, gone]
+        del self.ebay.live["v1|1|0"]                      # sold: neither a search nor a read returns it
+        for _ in range(24):
+            self.clock.advance(hours=1)
+            self.tick()
+        self.assertEqual(len(self.ebay.reads("refresh")), 1, "one read, a day after it was parked")
+        self.assertEqual(self.candidate()["state"], "unavailable")
+        self.clock.advance(hours=1, minutes=1)
+        self.assertEqual(self.tick()["ended"], 1)
+        row = self.candidate()
+        self.assertEqual((row["state"], row["tracked"], row["listing"]), ("ended", 0, None))
+
+    def test_a_listing_parked_because_its_size_sold_out_keeps_its_own_reads(self):
+        self.watch()
+        self.ebay.list(detail())
+        self.tick()
+        self.ebay.live["v1|1|0"]["availability"] = "OUT_OF_STOCK"
+        self.clock.advance(hours=5, minutes=1)
+        self.tick()
+        row = self.candidate()
+        self.assertEqual((row["state"], row["reason"]), ("parked", "size_out_of_stock"))
+        # A search result does not say whether a size is back, so the sweep cannot stand in.
+        self.assertEqual(row["next_refresh_at"], iso(self.clock() + timedelta(hours=5)))
 
     def test_a_sweep_updates_prices_on_tracked_listings_without_touching_their_fetch_time(self):
         self.watch()
@@ -741,7 +926,8 @@ class WithoutModels(TickTest):
         self.crusoe.answers["triage"] = CrusoeUnavailable("no usable answer for the triage role (HTTP 503)")
         report = self.tick()
         self.assertEqual((report["decisions"], report["not_model_checked"]), ({"pending": 2}, 1))
-        self.assertEqual(report["problems"], ["crusoe: 1 model call(s) failed: the service was unavailable"])
+        self.assertEqual(report["problems"], [
+            "crusoe: the service was unavailable; no more model calls were made in this tick"])
 
         coded, plain = self.candidate(1), self.candidate(2)
         self.assertEqual((coded["state"], coded["reason"], coded["tracked"]), ("maybe", "not_model_checked", 1))
@@ -757,6 +943,45 @@ class WithoutModels(TickTest):
         # The listing that has no verdict yet keeps the window from moving on.
         self.assertLess(self.store.get_watch(watch["id"])["window_end"], iso(self.clock()))
         self.assertEqual(self.store.verdicts_for(coded["id"])[-1]["rule_fired"], "not_model_checked")
+
+    def test_an_outage_is_found_once_a_tick_and_is_not_held_against_any_listing(self):
+        first, second = self.watch("Size 10"), self.watch("Size 11", size="US 11")
+        self.ebay.list(*[detail(n) for n in range(1, 22)])           # three triage batches for each watch
+        self.crusoe.answers["triage"] = CrusoeUnavailable("no usable answer for the triage role (HTTP 503)")
+        for tick in range(1, 5):                                     # an outage of half an hour and more
+            report = self.tick()
+            self.assertEqual(len(self.crusoe.calls), tick, "one call finds out; the other five are not sent")
+            self.assertEqual(report["decisions"], {"pending": 42})
+            self.assertEqual(report["problems"], [
+                "crusoe: the service was unavailable; no more model calls were made in this tick"])
+            self.clock.advance(minutes=10)
+        rows = self.store.list_candidates()
+        self.assertEqual({(row["state"], row["attempts"], row["tracked"]) for row in rows}, {("pending", 0, 0)})
+        self.assertEqual((self.alerts(), self.ebay.reads("detail")), ([], []), "no alert, and no eBay call wasted")
+
+        self.crusoe.answers["triage"] = all_titles_look_right        # Crusoe is back
+        report = self.tick()
+        self.assertEqual(report["problems"], [])
+        self.assertEqual({row["state"] for row in self.store.list_candidates(first["id"])}, {"alerted"})
+        self.assertEqual({row["reason"] for row in self.store.list_candidates(second["id"])}, {"mismatch:size"})
+        self.assertEqual(self.store.get_watch(first["id"])["window_end"], iso(self.clock()), "the window moves on")
+
+    def test_with_the_real_client_an_outage_costs_one_round_of_retries_a_tick(self):
+        def crusoe_api(method, url, headers, body):
+            if url.endswith("/models"):
+                models = [{"id": "openai/gpt-oss-120b"}, {"id": "deepseek-ai/DeepSeek-V4.1-Flash"}]
+                return json_response({"data": models})
+            return json_response({"error": {"message": "scaling up"}}, status=503)
+        api, sleeps = FakeTransport(crusoe_api), []
+        self.crusoe = CrusoeClient(self.settings, self.store, transport=api, sleep=sleeps.append, clock=lambda: 0.0)
+        self.watch()
+        self.ebay.list(*[detail(n) for n in range(1, 51)])           # five triage batches
+        report = self.tick()
+        chats = [call for call in api.calls if call["url"].endswith("/chat/completions")]
+        self.assertEqual(len(chats), 8, "two models, four attempts each, for the first batch only")
+        self.assertEqual(sleeps, [1.0, 2.0, 4.0] * 2, "seconds of backoff, where five batches took five times that")
+        self.assertEqual(report["decisions"], {"pending": 50})
+        self.assertEqual({row["attempts"] for row in self.store.list_candidates()}, {0})
 
     def test_a_listing_over_the_ceiling_is_not_alerted_on_its_style_code(self):
         self.watch()
@@ -917,6 +1142,298 @@ class QuietHours(TickTest):
         report = self.tick()
         self.assertEqual(report["delivery"]["dropped"], 1)
         self.assertEqual(self.wire.posts(), [])
+
+    def held_overnight(self, listing, refresh_due=True):
+        """Find a match at 23:00 local, which holds its alert. Returns the tracked row.
+
+        With `refresh_due` off the listing's own refresh is a day away, so in the morning
+        the read made for the waiting alert is the only one.
+        """
+        self.watch()
+        self.ebay.list(listing)
+        self.assertEqual(self.tick()["delivery"]["held"], 1)
+        row = self.candidate()
+        if not refresh_due:
+            self.store.update_candidate(row["id"], next_refresh_at=iso(self.clock() + timedelta(days=1)))
+        return self.candidate()
+
+    def test_a_held_alert_outlives_an_outage_and_goes_out_when_ebay_is_back(self):
+        row = self.held_overnight(detail())
+        self.clock.advance(hours=9, minutes=1)            # 08:01 local, and eBay cannot be reached
+        self.ebay.down = EbayUnreachable("eBay item lookup failed: GET api.ebay.com failed: timed out")
+        for _ in range(8):                                # forty minutes of ticks
+            calls = len(self.ebay.calls)
+            report = self.tick()
+            self.assertEqual(len(self.ebay.calls), calls + 1, "one call finds out; the alert's read is not tried")
+            self.assertEqual((report["unavailable"], report["ended"], report["delivery"]["held"]), (0, 0, 1))
+            self.assertEqual(report["problems"], ["ebay: eBay item lookup failed: GET api.ebay.com failed: timed out"])
+            self.clock.advance(minutes=5)
+        now = self.candidate()
+        self.assertEqual((now["state"], now["tracked"], now["next_refresh_at"]),
+                         ("alerted", 1, row["next_refresh_at"]))
+        self.assertIsNone(self.retry(row), "no failure was counted against the listing")
+        self.assertEqual([alert["status"] for alert in self.alerts()], ["held"])
+
+        self.ebay.down = None
+        report = self.tick()
+        self.assertEqual((report["delivery"]["sent"], report["problems"]), (1, []))
+        [alert] = self.alerts()
+        self.assertEqual((alert["status"], alert["payload"]["as_of"]), ("sent", iso(self.clock())))
+        self.assertEqual(len(self.ebay.reads("refresh")), 9, "eight failed, and one read served both the refresh "
+                                                              "and the alert")
+
+    def test_a_listing_ebay_cannot_return_is_retried_at_its_own_pace_while_its_alert_waits(self):
+        row = self.held_overnight(detail())
+        self.ebay.fail["v1|1|0"] = [EbayUnavailable("eBay item lookup failed: HTTP 503", status=503)]
+        self.clock.advance(hours=10, minutes=1)           # 09:01 local
+        report = self.tick()                              # the refresh that was due fails, once
+        self.assertEqual((report["unavailable"], report["ended"], report["delivery"]["held"]), (1, 0, 1))
+        self.assertEqual(report["problems"], ["refresh %s: eBay item lookup failed: HTTP 503" % row["code"]])
+        self.assertEqual(self.retry(row)["failures"], 1, "counted by the refresh, and not again for the alert")
+        for _ in range(11):                               # the rest of the hour: nothing to do but wait
+            self.clock.advance(minutes=5)
+            report = self.tick()
+            self.assertEqual((report["ended"], report["delivery"]["held"], report["problems"]), (0, 1, []))
+        self.assertEqual(len(self.ebay.reads("refresh")), 1, "no read on every tick for the waiting alert")
+        self.assertEqual((self.candidate()["state"], self.retry(row)["failures"]), ("unavailable", 1))
+
+        self.clock.advance(minutes=6)                     # the retry, an hour after the failure
+        report = self.tick()
+        self.assertEqual((report["refreshed"], report["delivery"]["sent"]), (1, 1))
+        self.assertEqual(self.candidate()["state"], "alerted")
+        self.assertEqual([alert["status"] for alert in self.alerts()], ["sent"])
+
+    def test_a_failed_read_for_a_waiting_alert_counts_nothing_and_hands_the_listing_to_the_paced_refresh(self):
+        row = self.held_overnight(detail(), refresh_due=False)
+        gone = EbayNotFound("eBay item lookup failed: HTTP 404, error 11001", status=404)
+        self.ebay.fail["v1|1|0"] = [gone, gone, gone]
+        del self.ebay.live["v1|1|0"]
+        self.clock.advance(hours=10)                      # 09:00 local
+        report = self.tick()                              # the read for the alert: not found
+        self.assertEqual((report["ended"], report["delivery"]["held"]), (0, 1))
+        self.assertEqual(report["problems"], ["alerts: refresh: EbayNotFound"])
+        now = self.candidate()
+        self.assertEqual((now["state"], now["tracked"], now["next_refresh_at"]), ("unavailable", 1, iso(self.clock())))
+        self.assertEqual(self.retry(row), {"failures": 0, "not_found": 0, "was": "alerted"})
+
+        self.clock.advance(minutes=5)
+        report = self.tick()                              # the paced refresh: not found, the first that counts
+        self.assertEqual((report["ended"], report["delivery"]["held"], self.retry(row)["not_found"]), (0, 1, 1))
+        self.clock.advance(minutes=30)
+        self.assertEqual(self.tick()["ended"], 0)
+        self.assertEqual(len(self.ebay.reads("refresh")), 2, "nothing is read between the paced retries")
+        self.clock.advance(minutes=31)
+        report = self.tick()                              # not found a second time: now it is over
+        self.assertEqual(report["ended"], 1)
+        self.assertEqual([alert["status"] for alert in self.alerts()], ["dropped"])
+        self.assertEqual(self.wire.posts(), [])
+
+    def test_a_card_released_in_the_morning_shows_shipping_and_condition_as_read_that_morning(self):
+        self.held_overnight(detail(shipping=usd("12.00"), condition="New with box"), refresh_due=False)
+        self.ebay.live["v1|1|0"].update(shipping=usd("15.00"), condition="Pre-owned")
+        self.clock.advance(hours=9, minutes=1)            # 08:01 local, nine hours after the full read
+        self.tick()
+        self.assertEqual(self.ebay.reads("refresh"), [("v1|1|0", False)], "a compact read would keep old shipping")
+        [alert] = self.alerts()
+        payload = alert["payload"]
+        self.assertEqual((payload["shipping"], payload["condition"], payload["as_of"]),
+                         (usd("15.00"), "Pre-owned", iso(self.clock())))
+        card = words(self.wire.posts())
+        self.assertIn("$15.00", card)
+        self.assertIn("Pre-owned", card)
+        for stale in ("$12.00", "New with box"):
+            self.assertNotIn(stale, card)
+        self.assertEqual(self.candidate()["listing"]["full_fetched_at"], iso(self.clock()))
+
+    def test_an_alert_released_soon_after_a_full_read_needs_only_a_compact_one(self):
+        self.clock.now = self.START + timedelta(hours=5)  # 04:00 local: four hours of quiet left
+        self.held_overnight(detail(shipping=usd("12.00")), refresh_due=False)
+        self.ebay.live["v1|1|0"]["price"] = usd("99.00")
+        self.clock.advance(hours=4, minutes=1)
+        self.tick()
+        self.assertEqual(self.ebay.reads("refresh"), [("v1|1|0", True)])
+        [alert] = self.alerts()
+        self.assertEqual((alert["payload"]["price"], alert["payload"]["shipping"]), (usd("99.00"), usd("12.00")))
+
+    def test_an_auction_that_ended_overnight_is_not_announced_in_the_morning(self):
+        ends = self.clock() + timedelta(hours=9, minutes=30)      # half an hour after the quiet hours
+        self.held_overnight(auction(ends_at=iso(ends)), refresh_due=False)
+        self.clock.advance(hours=10)                      # the Mac slept through the end
+        report = self.tick()                              # eBay still returns it, with its end behind us
+        self.assertEqual(self.ebay.reads("refresh"), [("v1|1|0", False)], "only the full listing has the end date")
+        self.assertEqual(report["delivery"]["dropped"], 1)
+        self.assertEqual(self.wire.posts(), [])
+
+    def test_a_refused_crusoe_key_does_not_keep_a_held_alert_back(self):
+        self.held_overnight(detail(), refresh_due=False)
+        self.ebay.list(detail(2))                         # something new for the morning's search to judge
+        self.crusoe.answers["triage"] = CrusoeAuthError("Crusoe refused the request (HTTP 401)")
+        self.clock.advance(hours=10)
+        report = self.tick()
+        self.assertEqual(report["problems"], ["crusoe: Crusoe refused the request (HTTP 401)"])
+        self.assertEqual(report["notices"], ["crusoe_auth"])
+        # eBay is fine, so the waiting alert is read and sent.
+        self.assertEqual(self.ebay.reads("refresh"), [("v1|1|0", False)])
+        self.assertEqual(report["delivery"], {"sent": 1, "held": 0, "dropped": 0, "failed": 0})
+        [alert] = self.alerts("new")
+        self.assertEqual((alert["status"], alert["payload"]["as_of"]), ("sent", iso(self.clock())))
+
+    def test_with_the_models_stopped_tracked_listings_are_still_refreshed_and_swept_but_nothing_is_searched(self):
+        first = self.watch("One")
+        second = self.watch("Two")
+        self.ebay.list(detail())
+        self.tick()                                       # both watches track the listing
+        self.ebay.list(detail(2))
+        self.crusoe.answers["triage"] = CrusoeAuthError("Crusoe refused the request (HTTP 401)")
+        self.clock.advance(hours=10)
+        searches = len(self.ebay.searches())
+        report = self.tick()
+        self.assertEqual(report["refreshed"], 2)
+        self.assertEqual(len(self.ebay.searches()), searches + 1, "the second watch would only meet the same refusal")
+        self.assertEqual(report["swept"], 2, "a sweep needs no model")
+        for watch in (first, second):
+            self.assertIsNone(self.store.get_candidate(watch["id"], "v1|2|0"))
+
+
+class Offline(TickTest):
+    """The real eBay client, over a network that can go away."""
+
+    def setUp(self):
+        super().setUp()
+        self.offline = False
+        self.api = FakeTransport(self.ebay_api)
+        self.bid = "75.00"
+
+    def ebay_api(self, method, url, headers, body):
+        if self.offline:
+            raise TransportError("%s api.ebay.com failed: no route to host" % method)
+        if url.endswith("/identity/v1/oauth2/token"):
+            return json_response({"access_token": "fake-application-token", "expires_in": 7200})
+        if "/item_summary/search" in url:
+            return json_response({"total": 0})
+        # What eBay returns for fieldgroups=COMPACT: prices, bids and availability.
+        return json_response({
+            "itemId": "v1|1|0", "price": usd(self.bid), "currentBidPrice": usd(self.bid), "bidCount": 6,
+            "minimumPriceToBid": usd("76.00"),
+            "estimatedAvailabilities": [{"estimatedAvailabilityStatus": "IN_STOCK"}],
+        })
+
+    def test_a_tick_without_network_does_not_cost_a_starred_auction_its_reminders(self):
+        self.watch(tier="hot")
+        ends = self.clock() + timedelta(minutes=110)
+        self.ebay.list(auction(ends_at=iso(ends)))
+        self.tick()                                       # found and announced through the scripted eBay
+        row = self.candidate()
+        self.store.update_candidate(row["id"], starred=True)
+        self.ebay = EbayClient(self.settings, self.store, transport=self.api)
+
+        self.clock.advance(minutes=60)                    # 50 minutes to go; awake before the Wi-Fi is up
+        self.offline = True
+        before = self.candidate()
+        report = self.tick()
+        self.assertEqual(len(self.api.calls), 1, "the token request failed, and nothing else was tried")
+        self.assertEqual(report["problems"],
+                         ["ebay: eBay token request failed: POST api.ebay.com failed: no route to host"])
+        self.assertEqual((report["unavailable"], report["ended"]), (0, 0))
+        now = self.candidate()
+        self.assertEqual((now["state"], now["next_refresh_at"]), ("alerted", before["next_refresh_at"]))
+        self.assertIsNone(self.retry(row))
+
+        self.offline = False
+        self.clock.advance(minutes=5)                     # 45 minutes to go, and online again
+        self.tick()
+        [ending] = self.alerts("ending")
+        self.assertEqual((ending["dedupe_key"], ending["status"]), ("ending60:%d" % row["id"], "sent"))
+        self.assertEqual(ending["payload"]["current_bid"], usd("75.00"))
+        self.clock.advance(minutes=37)                    # 8 minutes to go
+        self.tick()
+        self.assertEqual(sorted((alert["dedupe_key"], alert["status"]) for alert in self.alerts("ending")),
+                         [("ending10:%d" % row["id"], "sent"), ("ending60:%d" % row["id"], "sent")])
+
+
+class Allowance(TickTest):
+    """Each watch's 25 calls a day besides its searches: four sweeps and 21 counted reads."""
+
+    def ends(self, days):
+        return iso(self.clock() + timedelta(days=days))
+
+    def test_a_watch_reads_twenty_one_new_listings_a_day_and_the_rest_wait_soonest_ending_first(self):
+        watch = self.watch()
+        self.ebay.list(*[detail(n, end_at=self.ends(31 - n)) for n in range(1, 31)])   # the 30th ends first
+        report = self.tick()
+        read = [item_id for item_id, _ in self.ebay.reads("detail")]
+        self.assertEqual(read, ["v1|%d|0" % n for n in range(30, 9, -1)], "21 reads, soonest-ending first")
+        self.assertEqual(report["decisions"], {"alert": 21, "pending": 9})
+        self.assertEqual(report["allowance_spent"], [watch["id"]])
+        self.assertEqual(report["problems"], [], "waiting for tomorrow is not a failure")
+        self.assertEqual(self.reads_made(), {"1:detail": 21})
+        self.assertEqual(len(self.store.list_candidates()), 21, "nothing is written for a listing not reached")
+        held = self.store.get_watch(watch["id"])["window_end"]
+        self.assertLess(held, iso(self.clock()), "the window waits with them")
+
+        self.clock.advance(minutes=10)                    # later the same day
+        report = self.tick()
+        self.assertEqual(len(self.ebay.searches()), 1, "a search could only find listings it cannot read")
+        self.assertEqual((report["allowance_spent"], report["problems"]), ([watch["id"]], []))
+        self.assertEqual(len(self.ebay.reads("detail")), 21)
+
+        self.clock.advance(hours=6)                       # 00:10 UTC: a new day
+        report = self.tick()
+        self.assertEqual(len(self.ebay.reads("detail")), 30)
+        self.assertEqual({row["state"] for row in self.store.list_candidates()}, {"alerted"})
+        self.assertEqual(self.store.get_watch(watch["id"])["window_end"], iso(self.clock()))
+
+    def test_refreshes_stop_at_twelve_a_day_and_never_use_up_what_new_listings_need(self):
+        busy = self.watch("Busy")
+        quiet = self.watch("Quiet", size="US 11")
+        in_size_11 = {"Brand": ["Nike"], "US Shoe Size": ["11"], "Department": ["Men"]}
+        self.ebay.list(*[detail(n, end_at=self.ends(n)) for n in range(1, 15)])       # the first ends first
+        self.ebay.list(detail(20, aspects=in_size_11))
+        self.tick()                                       # 18:00 UTC: 14 matches for one watch, 1 for the other
+        self.assertEqual(len(self.store.list_candidates(busy["id"], tracked=True)), 14)
+
+        self.clock.advance(hours=6, minutes=1)            # 00:01 UTC the next day: all 15 are due
+        report = self.tick()
+        read = [item_id for item_id, _ in self.ebay.reads("refresh")]
+        self.assertEqual(read, ["v1|%d|0" % n for n in range(1, 13)] + ["v1|20|0"],
+                         "twelve for the busy watch, soonest-ending first; the other watch has its own")
+        self.assertEqual((report["refreshed"], report["allowance_spent"], report["problems"]), (13, [busy["id"]], []))
+        waiting = self.store.get_candidate(busy["id"], "v1|13|0")
+        self.assertLess(waiting["next_refresh_at"], iso(self.clock()), "still due: it is read first tomorrow")
+        self.assertEqual(report["swept"], 2, "the sweep is not held back, and re-prices all 14 in one call")
+        self.assertEqual(self.reads_made(), {"%d:refresh" % busy["id"]: 12, "%d:refresh" % quiet["id"]: 1})
+
+        self.ebay.list(detail(30))                        # a new listing for the busy watch
+        self.clock.advance(hours=5, minutes=1)            # the twelve are due again
+        report = self.tick()
+        self.assertEqual(len(self.ebay.reads("refresh")), 14, "one more for the quiet watch, none for the busy one")
+        self.assertEqual(self.store.get_candidate(busy["id"], "v1|30|0")["state"], "alerted")
+        self.assertEqual(self.reads_made()["%d:detail" % busy["id"]], 1)
+        self.assertEqual(report["allowance_spent"], [busy["id"]])
+
+    def test_the_read_for_an_alert_that_is_about_to_go_out_is_counted_but_never_waits(self):
+        watch = self.watch()
+        self.ebay.list(detail())
+        self.tick()
+        row = self.candidate()
+        self.store.ledger_add("ebay_watch", "%d:refresh" % watch["id"], 12)   # the day's refreshes are used
+        self.store.update_alert(self.alerts()[0]["id"], status="held")       # as if it had waited out the night
+        self.clock.advance(hours=5, minutes=1)
+        report = self.tick()
+        self.assertEqual((report["refreshed"], report["allowance_spent"]), (1, [watch["id"]]))
+        self.assertEqual(self.ebay.reads("refresh"), [("v1|1|0", True)], "the alert's read, not the paced refresh")
+        self.assertEqual(report["delivery"]["sent"], 1)
+        self.assertEqual(self.reads_made()["%d:refresh" % watch["id"]], 13)
+        self.assertGreater(self.candidate()["next_refresh_at"], row["next_refresh_at"])
+
+    def test_the_days_call_cap_is_still_told_apart_from_a_watchs_allowance(self):
+        watch = self.watch()
+        self.ebay.list(detail(1), detail(2))
+        self.ebay.fail["v1|1|0"] = [EbayBudgetExceeded("eBay daily call cap reached")]
+        report = self.tick()
+        self.assertEqual(report["problems"], ["ebay: the daily call cap is reached; searching resumes tomorrow (UTC)"])
+        self.assertEqual((report["allowance_spent"], self.reads_made()), ([], {}))
+        self.assertIsNotNone(self.store.get_watch(watch["id"])["last_search_at"])
 
 
 if __name__ == "__main__":

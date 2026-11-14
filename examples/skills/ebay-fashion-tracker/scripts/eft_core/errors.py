@@ -59,6 +59,14 @@ class EbayUnavailable(EbayError):
     """Temporary: error 11004, 429, 5xx or a network failure. Try again later."""
 
 
+class EbayUnreachable(EbayUnavailable):
+    """The Browse API gave no answer of its own: a network failure, no token to call it with,
+    a 429, or a reply that is not eBay's (a captive portal page).
+
+    It says nothing about any one listing, and the next call would end the same way.
+    """
+
+
 class EbayGroupRequired(EbayError):
     """Error 11006: the id is a multi-variation parent; read its item group instead."""
 

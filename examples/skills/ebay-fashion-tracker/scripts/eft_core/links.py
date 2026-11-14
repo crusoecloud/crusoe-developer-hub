@@ -11,6 +11,9 @@ import urllib.parse
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
+from .http import host_of, is_ebay_site
+
+# The sites whose marketplace id is known. Any other eBay domain is still an eBay link.
 DOMAIN_MARKETPLACE = {
     "ebay.com": "EBAY_US",
     "ebay.co.uk": "EBAY_GB",
@@ -26,6 +29,10 @@ DOMAIN_MARKETPLACE = {
     "ebay.ch": "EBAY_CH",
     "ebay.pl": "EBAY_PL",
     "ebay.be": "EBAY_BE",
+    "ebay.com.hk": "EBAY_HK",
+    "ebay.com.my": "EBAY_MY",
+    "ebay.com.sg": "EBAY_SG",
+    "ebay.ph": "EBAY_PH",
 }
 SHORT_HOSTS = ("ebay.us", "ebay.to")
 
@@ -72,7 +79,7 @@ def parse_link(url: str) -> EbayLink:
     original = (url or "").strip()
     candidate = original if "://" in original else "https://" + original
     parts = urllib.parse.urlsplit(candidate)
-    host = (parts.hostname or "").lower()
+    host = host_of(candidate)
     if not host:
         return EbayLink(kind="not_ebay", original=original)
 
@@ -80,10 +87,12 @@ def parse_link(url: str) -> EbayLink:
         return EbayLink(kind="short", original=original)
 
     domain = _site_domain(host)
-    if domain is None:
+    if domain is None and not is_ebay_site(host):
         return EbayLink(kind="not_ebay", original=original)
 
-    marketplace = DOMAIN_MARKETPLACE[domain]
+    # An eBay site the table does not list (ebay.se) uses the same link shapes. It is read
+    # the same way, with no marketplace; it must never be passed off as some other site's page.
+    marketplace = DOMAIN_MARKETPLACE[domain] if domain else None
     params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
     segments = [urllib.parse.unquote(s) for s in parts.path.split("/") if s]
 

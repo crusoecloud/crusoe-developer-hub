@@ -73,15 +73,29 @@ def read_env_file(path: Path) -> Tuple[Dict[str, str], Optional[str]]:
     return parse_env_text(text), None
 
 
-def default_state_dir(environ: Mapping[str, str], platform: Optional[str] = None) -> Path:
+def _anchored(path_text: str, root: Path) -> Path:
+    """The absolute path a path setting means. A relative one is read against the skill folder.
+
+    Reading it against the current directory would give the tool a different, empty state
+    for every directory it is run from, and the background agent has no working directory
+    of its own.
+    """
+    path = Path(path_text).expanduser()
+    return path if path.is_absolute() else root / path
+
+
+def default_state_dir(
+    environ: Mapping[str, str], platform: Optional[str] = None, root: Optional[Path] = None
+) -> Path:
     override = environ.get("EFT_STATE_DIR", "").strip()
     if override:
-        return Path(override).expanduser()
+        return _anchored(override, root or SKILL_ROOT)
     home = Path(environ.get("HOME") or Path.home())
     if (platform or sys.platform) == "darwin":
         return home / "Library" / "Application Support" / APP_NAME
     data_home = environ.get("XDG_DATA_HOME", "").strip()
-    base = Path(data_home) if data_home else home / ".local" / "share"
+    # The XDG specification says a relative XDG_DATA_HOME is invalid and to be ignored.
+    base = Path(data_home) if os.path.isabs(data_home) else home / ".local" / "share"
     return base / APP_NAME
 
 
@@ -174,6 +188,11 @@ class Settings:
         )
 
     def ensure_state_dir(self) -> None:
+        """Create the state folder, readable by its owner only.
+
+        It holds listing snapshots, the user's photos and a cached API token. A folder that
+        already exists keeps the permissions it has: it may be one the user shares.
+        """
         self.state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.refs_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
 
@@ -182,10 +201,14 @@ def load_settings(
     environ: Optional[Mapping[str, str]] = None,
     skill_root: Optional[Path] = None,
 ) -> Settings:
-    """Build Settings from the environment, falling back to the .env file."""
+    """Build Settings from the environment, falling back to the .env file.
+
+    A relative EFT_ENV_FILE or EFT_STATE_DIR is read against the skill folder, never against
+    the directory the command was started in.
+    """
     environ = dict(os.environ if environ is None else environ)
-    root = Path(skill_root) if skill_root else SKILL_ROOT
-    env_file = Path(environ.get("EFT_ENV_FILE") or root / ".env").expanduser()
+    root = Path(os.path.abspath(str(skill_root))) if skill_root else SKILL_ROOT
+    env_file = _anchored(environ.get("EFT_ENV_FILE", "").strip() or ".env", root)
     file_values, problem = read_env_file(env_file)
 
     def get(name: str, default: str = "") -> str:
@@ -220,7 +243,7 @@ def load_settings(
 
     return Settings(
         skill_root=root,
-        state_dir=default_state_dir(merged_for_paths),
+        state_dir=default_state_dir(merged_for_paths, root=root),
         env_file=env_file,
         env_file_problem=problem,
         crusoe_api_key=get("CRUSOE_API_KEY"),

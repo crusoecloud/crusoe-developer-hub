@@ -205,12 +205,16 @@ class Cards(unittest.TestCase):
         self.assertIn("as of Nov 12, 10:00 PST", text)
 
     def test_cards_state_facts_and_never_vouch_for_the_item(self):
-        for payload in (fixed_price(), auction()):
-            text = words(alerts.render_slack(payload, tz=UTC)).lower()
-            self.assertEqual(text.count("not authenticated"), 1)
-            self.assertNotIn("authentic", text.replace("not authenticated", ""))
-            for word in ("deal", "score", "bargain", "worth", "cheap"):
-                self.assertNotIn(word, text)
+        """A seller's title is shown as written. The rule is for every word around it: the tool's own."""
+        claim = "100% AUTHENTIC Nike Dunk Low Panda Men's 10"
+        for payload in (fixed_price(), auction(), fixed_price(title=claim), auction(title=claim)):
+            for rendered in (alerts.render_slack(payload, tz=UTC), alerts.render_push(payload, tz=UTC)):
+                self.assertIn(payload["title"], words(rendered))
+                own_words = words(rendered).replace(payload["title"], "").lower()
+                self.assertEqual(own_words.count("not authenticated"), 1)
+                self.assertNotIn("authentic", own_words.replace("not authenticated", ""))
+                for word in ("deal", "score", "bargain", "worth", "cheap"):
+                    self.assertNotIn(word, own_words)
 
     def test_notification_text_carries_no_price(self):
         for payload in (fixed_price(), auction()):
@@ -339,6 +343,7 @@ class Wire:
     def __init__(self):
         self.posts, self.updates, self.pushes = [], [], []
         self.slack_replies = []     # queued replies for the next chat.postMessage calls
+        self.update_replies = []    # queued replies for the next chat.update calls
         self.slack_down = None      # an error code that every Slack call fails with
         self.push_down = False
         self.transport = FakeTransport(self.handle)
@@ -355,6 +360,8 @@ class Wire:
         if self.slack_down:
             return json_response({"ok": False, "error": self.slack_down})
         if url == UPDATE:
+            if self.update_replies:
+                return self.update_replies.pop(0)
             return json_response({"ok": True, "channel": sent["channel"], "ts": sent["ts"]})
         if self.slack_replies:
             return self.slack_replies.pop(0)
@@ -553,6 +560,21 @@ class QuietHoursDelivery(OutboxCase):
         self.assertEqual(notifier.problems, ["refresh: EbayUnavailable"])
         self.assertEqual(self.wire.transport.calls, [])
 
+    def test_alert_stays_held_without_a_problem_when_the_refresher_says_not_ready(self):
+        self.night()
+        alert_id = self.queue()
+        notifier = self.notifier()
+        notifier.deliver_pending()
+        self.morning()
+
+        def refresher(alert):
+            raise alerts.NotReady("the listing's next read is already scheduled")
+
+        self.assertEqual(notifier.deliver_pending(refresher), {"sent": 0, "held": 1, "dropped": 0, "failed": 0})
+        self.assertEqual(self.alert(alert_id)["status"], "held")
+        self.assertEqual(notifier.problems, [], "nothing failed, so there is nothing to report")
+        self.assertEqual(self.wire.transport.calls, [])
+
     def test_held_alert_goes_out_as_it_is_without_a_refresher(self):
         self.night()
         alert_id = self.queue()
@@ -647,8 +669,11 @@ class Grouping(OutboxCase):
         older = self.queue("P3", as_of="2026-11-12T15:00:00Z")
         newer = self.queue("P3", as_of="2026-11-12T17:30:00Z")
         self.notifier(SLACK).deliver_pending()
-        self.assertIn("as of Nov 12, ", words(self.wire.posts[0]))
-        self.assertIn(" or later", words(self.wire.posts[0]))
+        # Delivery shows times in the machine's zone, so the expected text is built in that zone too.
+        oldest = datetime(2026, 11, 12, 15, 0, tzinfo=UTC).astimezone()
+        post = words(self.wire.posts[0])
+        self.assertIn("as of %s %d, %s" % (oldest.strftime("%b"), oldest.day, oldest.strftime("%H:%M")), post)
+        self.assertIn(" or later", post)
         for alert_id in (older, newer):
             self.assertEqual(self.messages(alert_id)[0]["as_of"], "2026-11-12T15:00:00Z")
 
@@ -905,6 +930,73 @@ class Endings(OutboxCase):
         self.assertIn("*Ended*", text)
         self.assertNotIn("$", text)
         self.assertIsNotNone(self.messages(alert_id)[0]["expired_at"])
+
+    def test_an_ended_rewrite_that_failed_is_retried_for_a_card_that_had_already_expired(self):
+        candidate = self.candidate()
+        notifier = self.notifier(SLACK)
+        alert_id = self.queue(candidate=candidate)
+        notifier.deliver_pending()
+        self.clock.advance(hours=6)
+        self.assertEqual(notifier.expire_messages(), 1)
+        self.assertIn(LISTING_URL, words(self.wire.updates[-1]["blocks"]), "the six-hour stub keeps the link")
+
+        self.clock.advance(hours=30)
+        self.wire.slack_down = "internal_error"
+        self.assertEqual(notifier.mark_ended(candidate["id"]), 0)
+        self.assertIsNone(self.messages(alert_id)[0]["expired_at"], "due again, so the stub is not forgotten")
+
+        self.wire.slack_down = None
+        self.assertEqual(notifier.expire_messages(), 1)
+        text = words(self.wire.updates[-1]["blocks"])
+        self.assertIn("*Ended*", text)
+        for gone in ("Nike Dunk Low", LISTING_URL):
+            self.assertNotIn(gone, text)
+        self.assertIsNotNone(self.messages(alert_id)[0]["expired_at"])
+        rewrites = len(self.wire.updates)
+        self.assertEqual(notifier.expire_messages(), 0)
+        self.assertEqual(len(self.wire.updates), rewrites)
+
+    def test_endings_cut_short_by_a_rate_limit_are_all_finished_once_it_has_passed(self):
+        candidates = [self.candidate(), self.candidate()]
+        notifier = self.notifier(SLACK)
+        for candidate in candidates:
+            self.queue(candidate=candidate)
+        notifier.deliver_pending()
+        self.clock.advance(hours=6)
+        self.assertEqual(notifier.expire_messages(), 2)
+
+        self.wire.update_replies = [
+            json_response({"ok": False, "error": "ratelimited"}, status=429, headers={"Retry-After": "120"})]
+        self.assertEqual([notifier.mark_ended(candidate["id"]) for candidate in candidates], [0, 0])
+        self.assertEqual(len(self.wire.updates), 3, "the second rewrite waits; a paused channel is not called")
+
+        self.clock.advance(seconds=121)
+        self.assertEqual(notifier.expire_messages(), 2)
+        for update in self.wire.updates[3:]:
+            text = words(update["blocks"])
+            self.assertIn("*Ended*", text)
+            self.assertNotIn(LISTING_URL, text)
+        self.assertEqual({update["ts"] for update in self.wire.updates[3:]}, {"1700000000.0001", "1700000000.0002"})
+
+    def test_an_expired_digest_is_rewritten_later_when_an_entry_ended_and_slack_refused(self):
+        gone, still_live = self.candidate(), self.candidate()
+        self.queue("P3", candidate=gone, title="First listing")
+        live_alert = self.queue("P3", candidate=still_live, title="Second listing")
+        notifier = self.notifier(SLACK)
+        notifier.deliver_pending()
+        self.clock.advance(hours=6)
+        self.assertEqual(notifier.expire_messages(), 2)
+        self.assertIn("First listing", words(self.wire.updates[-1]["blocks"]))
+
+        self.wire.slack_down = "internal_error"
+        self.assertEqual(notifier.mark_ended(gone["id"]), 0)
+        self.wire.slack_down = None
+        self.assertEqual(notifier.expire_messages(), 1)
+        text = words(self.wire.updates[-1]["blocks"])
+        self.assertIn("`%s` · Panda Dunks 10 · ended" % gone["code"], text)
+        self.assertNotIn("First listing", text)
+        self.assertIn("Second listing", text)
+        self.assertIsNotNone(self.messages(live_alert)[0]["expired_at"])
 
     def test_a_dropped_alert_is_not_sent_later(self):
         candidate = self.candidate()

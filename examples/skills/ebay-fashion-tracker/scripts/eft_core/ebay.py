@@ -26,6 +26,7 @@ from .errors import (
     EbayGroupRequired,
     EbayNotFound,
     EbayUnavailable,
+    EbayUnreachable,
 )
 from .http import Response, TransportError, UrllibTransport
 from .spec import BUYING_OPTIONS
@@ -129,7 +130,7 @@ class EbayClient:
                 "POST", self.settings.ebay_api_base + TOKEN_PATH, headers=headers, body=form.encode("ascii")
             )
         except TransportError as exc:
-            raise EbayUnavailable(self._redact("eBay token request failed: %s" % exc)) from None
+            raise EbayUnreachable(self._redact("eBay token request failed: %s" % exc)) from None
         finally:
             # Kept apart from Browse calls: token requests do not count against the daily cap.
             self.store.ledger_add("ebay_token", "mint")
@@ -282,14 +283,14 @@ class EbayClient:
     def _browse(self, path: str, params: Mapping[str, str], purpose: str, action: str) -> Dict[str, Any]:
         """One GET against the Browse API: budget check, token, request, ledger, error mapping."""
         self._check_budget()
-        token = self.token()
+        token = self._token_for_call()
         url = self.settings.ebay_api_base + BROWSE_PATH + path
         if params:
             url += "?" + urllib.parse.urlencode(params, quote_via=urllib.parse.quote, safe="")
         try:
             response = self.transport.request("GET", url, headers=self._headers(token))
         except TransportError as exc:
-            raise EbayUnavailable(self._redact("eBay %s failed: %s" % (action, exc), token)) from None
+            raise EbayUnreachable(self._redact("eBay %s failed: %s" % (action, exc), token)) from None
         finally:
             # Counted whatever the outcome: a request that failed on the way may still have reached eBay.
             self.store.ledger_add("ebay", purpose)
@@ -301,11 +302,24 @@ class EbayClient:
             raise self._error(response, action, token)
         return self._json_object(response, action)
 
+    def _token_for_call(self) -> str:
+        """The token for a Browse call. Without one the call is never made.
+
+        Whatever the token endpoint answered, that says nothing about the listing or search
+        the caller wanted, so any failure but a refused keyset is raised as EbayUnreachable.
+        """
+        try:
+            return self.token()
+        except (EbayAuthError, EbayUnreachable):
+            raise
+        except EbayError as problem:
+            raise EbayUnreachable(str(problem), status=problem.status, error_ids=problem.error_ids) from None
+
     def _json_object(self, response: Response, action: str) -> Dict[str, Any]:
         data = _json_or_none(response)
         if not isinstance(data, dict):
             # A success status with something else in the body, such as a captive portal page.
-            raise EbayUnavailable(
+            raise EbayUnreachable(
                 "eBay %s returned a response that is not a JSON object" % action, status=response.status
             )
         return data
@@ -484,7 +498,10 @@ def _error_type(status: int, error_ids: Sequence[int]) -> Type[EbayError]:
         return EbayAuthError
     if status == 404:
         return EbayNotFound
-    if status == 429 or status >= 500:
+    if status == 429:
+        # Rate limited: eBay did not look at the request, and would not look at the next one.
+        return EbayUnreachable
+    if status >= 500:
         return EbayUnavailable
     return EbayError
 

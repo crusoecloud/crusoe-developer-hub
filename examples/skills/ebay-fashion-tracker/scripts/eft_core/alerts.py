@@ -8,7 +8,9 @@ tool promises its user):
 - When a listing ends, every message about it becomes "Ended" and the stored alert
   payloads lose their listing content.
 - Cards state facts from the API: no deal score, no price opinion, nothing from another
-  site, and never a claim that an item is genuine. Links come from the API.
+  site. The tool's own wording never says an item is genuine, and every card says "not
+  authenticated". A seller's title is shown as written, whatever it claims. Links come
+  from the API.
 - No token or key appears in an error message.
 
 The tool reports price and bid state. It never bids, offers or buys.
@@ -74,6 +76,14 @@ class DeliveryError(Exception):
         super().__init__("%s: %s" % (channel, reason))
         self.channel = channel
         self.reason = reason
+
+
+class NotReady(Exception):
+    """Raised by a refresher: the alert has to keep waiting, and nothing failed just now.
+
+    The caller knows of a reason that is not a failure of this run (the listing's next read
+    is already scheduled, or eBay is not being called any more in this poll).
+    """
 
 
 # ---- payloads and tiers ------------------------------------------------------
@@ -525,7 +535,8 @@ class Notifier:
         Freshness: an alert that was held, or whose data is six hours old, is re-fetched
         through `refresher(alert)` before it is sent. That returns a fresh payload, or
         None when the listing is gone, in which case the alert is dropped. If it raises
-        EbayError the listing could not be read just now and the alert stays held.
+        EbayError the listing could not be read just now: the alert stays held and the
+        failure is noted. If it raises NotReady the alert stays held and nothing is noted.
 
         Grouping: every P3 alert goes into one digest message. More than three P2
         alerts for one watch go out as one summary. Anything else is its own card, and
@@ -586,6 +597,8 @@ class Notifier:
             return "ready", alert
         try:
             fresh = refresher(alert)
+        except NotReady:
+            return self._hold(alert), alert
         except EbayError as exc:
             self._note("refresh: %s" % exc.__class__.__name__)
             return self._hold(alert), alert
@@ -750,7 +763,8 @@ class Notifier:
         """A listing ended: rewrite its Slack messages as "Ended". Returns how many were rewritten.
 
         The stored payloads of its alerts lose their listing content here too, and any
-        alert for it that was still waiting to go out is dropped.
+        alert for it that was still waiting to go out is dropped. A message that could
+        not be rewritten just now is left due, and `expire_messages` finishes it.
         """
         with self.store.transaction():
             for alert in self.store.alerts_by_status():
@@ -768,7 +782,8 @@ class Notifier:
         """Remove listing data from these messages.
 
         Returns (rows marked expired, Slack messages rewritten). Several rows can point
-        at one Slack message (a digest); it is rewritten once.
+        at one Slack message (a digest); it is rewritten once. A row whose rewrite
+        failed is left due for the next run.
         """
         outcome: Dict[Tuple[Any, Any], bool] = {}
         expired = 0
@@ -778,10 +793,22 @@ class Notifier:
                 if where not in outcome:
                     outcome[where] = self._rewrite(message)
                 if not outcome[where]:
+                    self._keep_due(message)
                     continue
             self.store.mark_message_expired(message["id"])
             expired += 1
         return expired, sum(outcome.values())
+
+    def _keep_due(self, message: Mapping[str, Any]) -> None:
+        """A rewrite failed: make sure `expire_messages` tries this message again.
+
+        A row that has not expired is still on its list. A row that expired at six
+        hours is not, yet its stub keeps the title and the link, which must go once the
+        listing has ended. So when that stub could not be rewritten as "Ended", the row
+        is put back as one that still shows listing data.
+        """
+        if message["expired_at"] is not None:
+            self.store.refresh_message(message["id"], message["as_of"])
 
     def _rewrite(self, message: Mapping[str, Any]) -> bool:
         """Resend a Slack message without its old data. True when it no longer shows any."""

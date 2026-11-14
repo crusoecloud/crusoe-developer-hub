@@ -63,7 +63,7 @@ class FakeCrusoe(poller.FakeCrusoe):
         self.prompts.append({"role": role, "system": system, "parts": parts})
         return super().chat_json(role, system, parts, required=required, validator=validator)
 
-    def image_part(self, source):
+    def image_part(self, source, allow_temp_file=True):
         try:
             with open(str(source), "rb") as handle:
                 return {"type": "image", "data": handle.read(), "mime": "image/jpeg"}
@@ -265,6 +265,18 @@ class Add(CliTest):
         self.assertEqual(code, 1)
         self.assertIn("eft add --text", err)
         self.assertEqual((self.ebay.calls, self.crusoe.prompts, self.wire.transport.calls), ([], [], []))
+
+    def test_an_item_link_on_any_ebay_site_is_looked_up_and_never_called_a_retailer_page(self):
+        self.ebay.by_legacy["256012345678"] = poller.detail(title="Nike Dunk Low Panda DD1391-100 Mens 10")
+        for url in ("https://www.ebay.com.sg/itm/256012345678", "https://www.ebay.se/itm/256012345678",
+                    "https://www.ebay.com./itm/256012345678"):
+            del self.ebay.calls[:]
+            code, data = self.eft_json("add", "--url", url)
+            self.assertEqual(code, 0, url)
+            self.assertEqual(self.ebay.calls, [("get_item_by_legacy_id", "256012345678", {"purpose": "add"})], url)
+            self.assertEqual(self.wire.transport.calls, [], url)
+        code, data = self.eft_json("add", "--url", "https://www.ebay.com.sg/itm/256012345678")
+        self.assertTrue(any("EBAY_SG" in note for note in data["notes"]), data["notes"])
 
     def test_an_ebay_link_that_is_not_an_item_product_or_search_is_refused(self):
         code, _, err = self.eft("add", "--url", "https://www.ebay.com/usr/some_store")

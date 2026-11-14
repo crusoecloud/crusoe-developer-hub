@@ -1,8 +1,11 @@
+import os
+import stat
+import tempfile
 import unittest
 from datetime import timedelta
 
 import support
-from eft_core.store import iso, parse_iso, strip_evidence
+from eft_core.store import Store, code_for, iso, parse_iso, strip_evidence
 
 SPEC = {"brand": "Nike", "model": "Dunk Low"}
 
@@ -57,6 +60,34 @@ class Candidates(unittest.TestCase):
         self.assertEqual(other["code"], "A2")
         self.assertEqual(self.store.seen_item_ids(self.watch_id), {"v1|1|0", "v1|2|0"})
         self.assertEqual(self.store.get_candidate_by_code("a2")["item_id"], "v1|2|0")
+
+    def test_codes_never_repeat_however_many_candidates_there_have_been(self):
+        self.assertEqual([code_for(n) for n in (1, 99, 100, 2574, 2575, 2673, 2674, 5149)],
+                         ["A1", "A99", "B1", "Z99", "A100", "A198", "B100", "A199"])
+        self.assertEqual(len({code_for(n) for n in range(1, 20001)}), 20000)
+        tracked = self.store.upsert_candidate(self.watch_id, "v1|1|0", "alerted", tracked=True)
+        # 2,574 more listings later (every judged listing gets a row, rejects included)...
+        self.store.kv_set("code_counter", 2574)
+        later = self.store.upsert_candidate(self.watch_id, "v1|2|0", "rejected")
+        self.assertEqual((tracked["code"], later["code"]), ("A1", "A100"))
+        self.assertEqual(self.store.get_candidate_by_code("A1")["item_id"], "v1|1|0")
+
+    def test_a_code_a_stored_candidate_still_holds_is_skipped(self):
+        first = self.store.upsert_candidate(self.watch_id, "v1|1|0", "alerted", tracked=True)
+        second = self.store.upsert_candidate(self.watch_id, "v1|2|0", "alerted", tracked=True)
+        self.store.kv_delete("code_counter")     # a store whose counter was lost
+        third = self.store.upsert_candidate(self.watch_id, "v1|3|0", "rejected")
+        self.assertEqual([row["code"] for row in (first, second, third)], ["A1", "A2", "A3"])
+        self.assertEqual(self.store.upsert_candidate(self.watch_id, "v1|4|0", "rejected")["code"], "A4")
+
+    def test_lookup_by_code_prefers_the_tracked_row(self):
+        # A store written when codes started again at A1 can hold one code twice.
+        tracked = self.store.upsert_candidate(self.watch_id, "v1|1|0", "alerted", tracked=True)
+        newer = self.store.upsert_candidate(self.watch_id, "v1|2|0", "rejected")
+        self.store.conn.execute("UPDATE candidate SET code = ? WHERE id = ?", (tracked["code"], newer["id"]))
+        self.assertEqual(self.store.get_candidate_by_code("a1")["item_id"], "v1|1|0")
+        self.store.update_candidate(tracked["id"], tracked=False)
+        self.assertEqual(self.store.get_candidate_by_code("A1")["item_id"], "v1|2|0", "else the newest row")
 
     def test_rejects_unknown_state_and_fields(self):
         with self.assertRaises(ValueError):
@@ -126,10 +157,53 @@ class Candidates(unittest.TestCase):
         self.assertEqual(self.store.seen_item_ids(self.watch_id), {"keep"})
         self.assertEqual(self.store.verdicts_for(old["id"]), [])
 
+    def test_purge_expired_waits_for_a_message_that_still_shows_listing_data(self):
+        now = self.clock()
+        shown = self.store.upsert_candidate(self.watch_id, "shown", "rejected", purge_at=iso(now - timedelta(hours=1)))
+        alert_id = self.store.enqueue_alert("new:shown", "new", "P2", {}, watch_id=self.watch_id,
+                                            candidate_id=shown["id"])
+        message_id = self.store.record_message(alert_id, "slack", {"channel": "D1", "ts": "1.0"},
+                                               candidate_id=shown["id"], as_of=iso(now - timedelta(hours=2)))
+        self.assertEqual(self.store.purge_expired(), 0)
+        self.assertEqual(len(self.store.messages_for_candidate(shown["id"])), 1,
+                         "deleting the row would lose track of a card that still shows a title and a price")
+        self.store.mark_message_expired(message_id)
+        self.assertEqual(self.store.purge_expired(), 1)
+        self.assertEqual(self.store.messages_for_candidate(shown["id"]), [])
+
     def test_deleting_a_watch_removes_its_candidates(self):
         self.store.upsert_candidate(self.watch_id, "a", "pending")
         self.store.delete_watch(self.watch_id)
         self.assertEqual(self.store.list_candidates(), [])
+
+
+class DatabaseFile(unittest.TestCase):
+    def setUp(self):
+        self.addCleanup(os.umask, os.umask(0o022))    # the usual default, whatever this shell has
+
+    @staticmethod
+    def mode(path):
+        return stat.S_IMODE(os.stat(path).st_mode)
+
+    def test_the_database_and_its_folder_are_for_the_owner_only(self):
+        folder = os.path.join(tempfile.mkdtemp(prefix="eft-db-"), "state")
+        path = os.path.join(folder, "tracker.db")
+        store = Store(path)
+        self.addCleanup(store.close)
+        store.kv_set("ebay:token", {"access_token": "secret"})
+        self.assertEqual(self.mode(folder), 0o700)
+        written = [path + suffix for suffix in ("", "-wal", "-shm") if os.path.exists(path + suffix)]
+        self.assertIn(path, written)
+        for name in written:
+            self.assertEqual(self.mode(name), 0o600, name)
+
+    def test_a_database_left_readable_by_others_is_tightened_when_opened(self):
+        path = os.path.join(tempfile.mkdtemp(prefix="eft-db-"), "tracker.db")
+        Store(path).close()
+        os.chmod(path, 0o644)
+        store = Store(path)
+        self.addCleanup(store.close)
+        self.assertEqual(self.mode(path), 0o600)
 
 
 class AlertsAndMessages(unittest.TestCase):

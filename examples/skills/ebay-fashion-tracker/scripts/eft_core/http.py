@@ -2,7 +2,8 @@
 
 eBay's User Agreement prohibits automated access to its sites. This tool reads eBay
 only through the official API hosts. `check_url` enforces that for every request,
-including redirects, so a bug elsewhere cannot turn into scraping.
+including redirects, so a bug elsewhere cannot turn into scraping. A redirect also
+never carries an API key to a host other than the one the request was made to.
 """
 from __future__ import annotations
 
@@ -12,6 +13,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
+from http.client import HTTPException
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 MAX_BODY_BYTES = 20 * 1024 * 1024
@@ -27,18 +29,32 @@ class BlockedUrl(Exception):
 
 
 class TransportError(Exception):
-    """The request could not be completed (DNS, TLS, timeout, connection reset)."""
+    """The request could not be completed (DNS, TLS, timeout, connection reset, a reply cut short)."""
+
+
+def host_of(url: str) -> str:
+    """The host a URL names, lower-cased and without the trailing dot DNS allows.
+
+    "www.ebay.com." reaches the same server as "www.ebay.com", so every check on a host
+    reads it through here.
+    """
+    return (urllib.parse.urlsplit(url).hostname or "").lower().rstrip(".")
+
+
+def is_ebay_site(host: str) -> bool:
+    """True for a host on any eBay site or short-link domain, including the API hosts."""
+    return bool(_EBAY_SITE_RE.search(host.lower().rstrip(".")))
 
 
 def check_url(url: str) -> None:
     """Raise BlockedUrl unless the URL is https and not an eBay web page."""
-    parts = urllib.parse.urlsplit(url)
-    if parts.scheme != "https":
-        raise BlockedUrl("only https URLs are requested: %s" % parts.scheme)
-    host = (parts.hostname or "").lower()
+    scheme = urllib.parse.urlsplit(url).scheme
+    if scheme != "https":
+        raise BlockedUrl("only https URLs are requested: %s" % scheme)
+    host = host_of(url)
     if not host:
         raise BlockedUrl("URL has no host")
-    if _EBAY_SITE_RE.search(host) and host not in EBAY_API_HOSTS:
+    if is_ebay_site(host) and host not in EBAY_API_HOSTS:
         raise BlockedUrl(
             "eBay pages are never fetched (%s); use the Browse API on api.ebay.com" % host
         )
@@ -64,8 +80,8 @@ class Response:
 
 
 def _origin(url: str) -> Tuple[str, int]:
-    parts = urllib.parse.urlsplit(url)
-    return (parts.hostname or "").lower(), parts.port or 443
+    """The server an https URL is sent to: its host and port."""
+    return host_of(url), urllib.parse.urlsplit(url).port or 443
 
 
 def read_capped(stream: Any, limit: int) -> bytes:
@@ -76,11 +92,16 @@ def read_capped(stream: Any, limit: int) -> bytes:
 
 
 class _GuardedRedirect(urllib.request.HTTPRedirectHandler):
+    """Follows a redirect only to the same host and port, and never to an eBay page."""
+
     def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D102
         check_url(newurl)
         if _origin(newurl) != _origin(req.full_url):
+            # urllib copies every header, Authorization included, to the target of a redirect.
+            # A key is for the host it was issued for, so a redirect elsewhere is not followed.
             raise TransportError(
-                "%s redirected to another host (%s), which is not followed" % (_host(req.full_url), _host(newurl))
+                "%s redirected to another host (%s), which is not followed"
+                % (host_of(req.full_url) or "?", host_of(newurl) or "?")
             )
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
@@ -103,6 +124,15 @@ class UrllibTransport:
         check_url(url)
         req = urllib.request.Request(url, data=body, method=method.upper(), headers=headers or {})
         try:
+            return self._exchange(req, timeout)
+        except BlockedUrl:
+            raise
+        except (urllib.error.URLError, HTTPException, OSError, ValueError) as exc:
+            raise TransportError("%s %s failed: %s" % (method.upper(), host_of(url) or "?", _reason(exc)))
+
+    def _exchange(self, req: urllib.request.Request, timeout: float) -> Response:
+        """Send one request and read the whole reply. An HTTP error status is a reply like any other."""
+        try:
             with self._opener.open(req, timeout=timeout) as resp:
                 return Response(
                     status=resp.status,
@@ -115,14 +145,15 @@ class UrllibTransport:
                 headers={k.lower(): v for k, v in (exc.headers or {}).items()},
                 body=read_capped(exc, self._max_body_bytes),
             )
-        except BlockedUrl:
-            raise
-        except (urllib.error.URLError, OSError, ValueError) as exc:
-            raise TransportError("%s %s failed: %s" % (method.upper(), _host(url), exc))
 
 
-def _host(url: str) -> str:
-    return urllib.parse.urlsplit(url).hostname or "?"
+def _reason(exc: Exception) -> str:
+    """Why a request failed, in words that are safe to log.
+
+    An http.client error (a reply cut off part-way, a malformed status line or URL) can quote
+    the request path, and a path can be a secret webhook address, so only its name is given.
+    """
+    return exc.__class__.__name__ if isinstance(exc, HTTPException) else str(exc)
 
 
 def json_response(obj: Any, status: int = 200, headers: Optional[Dict[str, str]] = None) -> Response:

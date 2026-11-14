@@ -32,6 +32,7 @@ from . import __version__
 from .config import ConfigError, Settings
 from .errors import ChatResult, CrusoeAuthError, CrusoeError, CrusoeUnavailable
 from .http import BlockedUrl, Response, TransportError, UrllibTransport, check_url
+from .prompts import block
 from .store import Store, parse_iso
 
 ROLE_FAMILY = {
@@ -62,6 +63,12 @@ SIPS = "/usr/bin/sips"
 SIPS_TIMEOUT = 30.0
 MAX_IMAGE_EDGE = 1024
 MAX_PASSTHROUGH_BYTES = 4 * 1024 * 1024
+# Added to an image error when sips is installed but did not convert the photo. The usual
+# cause is a sandboxed shell (Claude Code's, for one), where sips cannot write its output.
+SIPS_FAILED_HINT = (
+    ". sips could not convert it, as happens inside Claude Code's sandboxed shell. Save the photo "
+    "as a JPEG or PNG under 4 MB, or run `eft add --image` from your own terminal"
+)
 
 _AUTH_HINTS = {
     401: "the API key is missing, wrong or expired; check CRUSOE_API_KEY",
@@ -371,26 +378,31 @@ class CrusoeClient:
 
     # ---- images ------------------------------------------------------------
 
-    def image_part(self, source: Union[str, Path, bytes]) -> Dict[str, Any]:
+    def image_part(self, source: Union[str, Path, bytes], allow_temp_file: bool = True) -> Dict[str, Any]:
         """Turn a photo (a file path or raw bytes) into an image part for `chat_json`.
 
         On macOS the photo is converted with sips to a JPEG of at most 1024 px on its long
         edge, which keeps requests small and accepts HEIC and WebP. Where sips is missing or
         cannot run (inside a sandboxed shell it is not allowed to write its scratch file),
         a JPEG or PNG of up to 4 MB is sent as it is and anything else raises CrusoeError.
+
+        sips works on files, so converting writes the photo to a temporary file. That is fine
+        for the user's own photo and not for an eBay listing photo, which must never be on
+        disk: pass `allow_temp_file=False` for those, and the bytes are only ever passed through.
         """
         data = _image_bytes(source)
-        if _can_use_sips():
+        hint = ""
+        if allow_temp_file and _can_use_sips():
             converted = _sips_to_jpeg(data)
             if converted:
                 return {"type": "image", "data": converted, "mime": "image/jpeg"}
+            hint = SIPS_FAILED_HINT
         mime = _sniff_mime(data)
         if mime is None:
-            raise CrusoeError("the image is not a JPEG or PNG and could not be converted to one")
+            raise CrusoeError("the image is not a JPEG or PNG and could not be converted to one" + hint)
         if len(data) > MAX_PASSTHROUGH_BYTES:
-            raise CrusoeError(
-                "the image is %.1f MB and could not be downscaled; the limit is 4 MB" % (len(data) / 1048576.0)
-            )
+            megabytes = len(data) / 1048576.0
+            raise CrusoeError("the image is %.1f MB and could not be downscaled; the limit is 4 MB" % megabytes + hint)
         return {"type": "image", "data": data, "mime": mime}
 
 
@@ -555,6 +567,10 @@ def _repair_part(problem: str, previous: str, required: Sequence[str]) -> Dict[s
 
     It extends the user turn instead of adding assistant and user messages, because some
     chat templates reject an empty assistant message or two user messages in a row.
+
+    The previous reply can repeat text the model read in a listing or a photo, so it is
+    untrusted like any other outside text: it goes back inside the same kind of data block
+    the prompts use, where it cannot pass for an instruction or close the block early.
     """
     lines = [
         "Your previous reply could not be used: %s." % problem.rstrip("."),
@@ -563,7 +579,7 @@ def _repair_part(problem: str, previous: str, required: Sequence[str]) -> Dict[s
     if required:
         lines.append("It must have these keys: %s." % ", ".join(required))
     if previous.strip():
-        lines += ["Your previous reply was:", "<<<", previous.strip()[:REPAIR_QUOTE_CHARS], ">>>"]
+        lines += ["Your previous reply was:", block("previous_reply", previous.strip()[:REPAIR_QUOTE_CHARS])]
     return {"type": "text", "text": "\n".join(lines)}
 
 

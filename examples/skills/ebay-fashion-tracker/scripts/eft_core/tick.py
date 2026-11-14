@@ -18,7 +18,14 @@ search window. A crash at any point therefore produces a late alert, never a los
 the alert's key, which is unique per verdict, means never a second one.
 
 An API failure does not raise. It becomes a line under "problems" in the report, and the
-tick carries on with the next listing or watch.
+tick carries on with the next listing or watch. A failure that says nothing about a listing
+(no network, a refused key, a spent budget) is never held against one: eBay and Crusoe are
+each left alone for the rest of the tick, and whatever does not need the one that failed
+still runs.
+
+Each watch has a daily allowance of eBay calls besides its searches. When it is used up, the
+watch's refreshes and its new listings wait for the next UTC day, soonest-ending first. That
+is not a problem, so it is reported apart, under "allowance_spent".
 """
 from __future__ import annotations
 
@@ -27,15 +34,17 @@ import os
 import traceback
 from datetime import datetime, timedelta, timezone
 from functools import partial
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from . import alerts, rules
 from .config import ConfigError, Settings
 from .errors import (
     ChatResult, CrusoeAuthError, CrusoeError, CrusoeUnavailable, EbayAuthError, EbayBudgetExceeded,
-    EbayError, EbayNotFound, EbayUnavailable,
+    EbayError, EbayNotFound, EbayUnreachable,
 )
-from .funnel import REASON_BUDGET, REASON_MODEL_ERROR, Funnel, FunnelResult, asking_price, fetch_image, snapshot
+from .funnel import (
+    FULL_READ_AT, REASON_BUDGET, UNJUDGED_REASONS, Funnel, FunnelResult, asking_price, fetch_image, snapshot,
+)
 from .http import BlockedUrl, TransportError, UrllibTransport
 from .plan import build_plan
 from .rules import MATCH, UNKNOWN
@@ -45,6 +54,15 @@ from .store import Store, iso, parse_iso
 # ---- the eBay call budget ----------------------------------------------------
 RESERVED_CALLS = 400            # kept back for adds, dry runs and retries
 CALLS_PER_WATCH = 25            # a day, for everything that is not a search
+SWEEPS_PER_DAY = 4              # one every six hours; they are part of the 25
+# The rest of the 25 are a watch's reads for the day: detail fetches for new listings and
+# refreshes of tracked ones. Refreshes get at most 12 of them, so that keeping old matches
+# up to date never uses up what judging new listings needs.
+READS_PER_WATCH = CALLS_PER_WATCH - SWEEPS_PER_DAY
+REFRESHES_PER_WATCH = 12
+# The ledger bucket that counts those reads, per day, under "<watch id>:<purpose>".
+WATCH_READS = "ebay_watch"
+READ_PURPOSES = ("detail", "refresh")
 MINUTES_PER_DAY = 24 * 60
 HOT_MINUTES = 10
 FEW_WATCHES = 10                # with this many watches or fewer, hot ones are searched more often
@@ -70,9 +88,17 @@ SWEEP_KEYS = ("price", "current_bid", "bid_count")
 # What eBay returns for fieldgroups=COMPACT. The title, the buying options, the end date and
 # the photo are not part of it, so a compact refresh never touches them.
 COMPACT_KEYS = ("price", "current_bid", "bid_count", "min_next_bid", "reserve_met", "availability")
+# Of the facts on a card, the ones only a full read returns. Between full reads they age,
+# while every compact read moves the snapshot's fetch time forward.
+FULL_READ_KEYS = ("shipping", "condition", "end_at")
+# How long listing data may be shown. Past it, a fact is read again or left off the card.
+CARD_LIFE = timedelta(seconds=alerts.SIX_HOURS)
 AUCTION_REFRESH = timedelta(hours=1)
 # A card may show data for six hours. Refreshing at five leaves room for a late tick.
 FIXED_PRICE_REFRESH = timedelta(hours=5)
+# A listing parked over the price ceiling is re-priced by the sweep, for the whole watch in
+# one call. Its own read is only there to notice that it is over, and can be rare.
+PARKED_REFRESH = timedelta(hours=24)
 LAST_HOUR = timedelta(hours=1)
 # How long to wait after the first, second, third and fourth failed read of a tracked listing.
 # The fifth read asks for the full listing, and if that fails too the listing is over.
@@ -97,6 +123,7 @@ OVERFLOW_KEY = "watch:%d:overflow"
 RETRY_KEY = "candidate:%d:refresh"
 
 BUDGET_MESSAGE = "the daily call cap is reached; searching resumes tomorrow (UTC)"
+CRUSOE_DOWN_MESSAGE = "the service was unavailable; no more model calls were made in this tick"
 EBAY_AUTH_NOTICE = (
     "eBay refused the keyset (HTTP 401 or 403). Searching is stopped until EBAY_CLIENT_ID and "
     "EBAY_CLIENT_SECRET work again. Run: eft doctor ebay"
@@ -111,10 +138,11 @@ def cadence_minutes(n_hot: int, n_normal: int, daily_cap: int) -> Dict[str, int]
     """Minutes between searches for hot and for normal watches, so a day's calls fit the cap.
 
     400 calls are held in reserve and every watch is allowed 25 a day for what is not a
-    search (detail fetches, refreshes, sweeps). Searches share the rest. Hot watches are
-    searched every 10 minutes, or every 5 while there are at most 10 watches in all. Normal
-    watches get what is left: never more often than every 10 minutes, in steps of 5. Past
-    what the cap can carry at all, every watch is searched once a day.
+    search (detail fetches, refreshes, sweeps); `_EbayMeter` holds each watch to that.
+    Searches share the rest. Hot watches are searched every 10 minutes, or every 5 while
+    there are at most 10 watches in all. Normal watches get what is left: never more often
+    than every 10 minutes, in steps of 5. Past what the cap can carry at all, every watch is
+    searched once a day.
     """
     total = n_hot + n_normal
     searches = daily_cap - RESERVED_CALLS - CALLS_PER_WATCH * total
@@ -150,19 +178,25 @@ def window_start(watch: Mapping[str, Any], now: datetime) -> datetime:
     return max(start, now - MAX_LOOKBACK)
 
 
-def next_refresh(listing: Mapping[str, Any], end_at: Optional[str], now: datetime) -> datetime:
+def next_refresh(listing: Mapping[str, Any], end_at: Optional[str], now: datetime,
+                 parked: bool = False) -> datetime:
     """When a tracked listing is read again.
 
     An auction is read every tick in its last hour and hourly before that. A fixed-price
     listing is read every five hours, which keeps the data on its card under six hours old.
+
+    `parked` is for a listing parked over the price ceiling. The sweep re-prices those, so
+    such a listing is read on its own once a day at most (and when its scheduled end
+    comes), and each sweep that returns it puts that read off again. In effect only a
+    listing the sweep no longer sees is read, to find out whether it is over.
     """
     end = parse_iso(end_at)
-    if "AUCTION" in (listing.get("buying_options") or []):
+    if "AUCTION" in (listing.get("buying_options") or []) and not parked:
         if end is not None and end - now <= LAST_HOUR:
             return now
         due = now + AUCTION_REFRESH
         return min(due, end - LAST_HOUR) if end is not None else due
-    due = now + FIXED_PRICE_REFRESH
+    due = now + (PARKED_REFRESH if parked else FIXED_PRICE_REFRESH)
     return min(due, end) if end is not None and end > now else due
 
 
@@ -209,6 +243,11 @@ class _ModelMeter:
     The funnel absorbs a failed model call (the listing just stays pending), so this is
     where the poller learns that the service was down or that another model answered than
     the one that was asked.
+
+    It is also the circuit breaker. "Unavailable" means every candidate model was rate
+    limited or down after its retries, and each of those retries waited its backoff. Once
+    one call has ended that way, the rest of the tick's calls fail at once without a
+    request: a tick must not sit on its lock retrying a service that is down.
     """
 
     def __init__(self, client: Any) -> None:
@@ -219,6 +258,8 @@ class _ModelMeter:
         self.swaps: Dict[str, str] = {}
 
     def chat_json(self, role: str, system: str, parts: Sequence[Dict[str, Any]], **options: Any) -> ChatResult:
+        if self.unavailable:
+            raise CrusoeUnavailable("Crusoe was unavailable earlier in this tick; the %s role was not asked" % role)
         try:
             answer = self.client.chat_json(role, system, parts, **options)
         except CrusoeAuthError:
@@ -234,13 +275,91 @@ class _ModelMeter:
             self.swaps[answer.model_requested] = answer.model_served
         return answer
 
-    def image_part(self, source: Any) -> Dict[str, Any]:
-        return self.client.image_part(source)
+    def image_part(self, source: Any, **options: Any) -> Dict[str, Any]:
+        return self.client.image_part(source, **options)
 
     @property
     def down(self) -> bool:
         """True when calls failed as unavailable and not one was answered."""
         return self.unavailable > 0 and self.answered == 0
+
+
+class _AllowanceSpent(EbayBudgetExceeded):
+    """A watch has made its reads for the day. No request was sent."""
+
+
+class _EbayMeter:
+    """Passes eBay calls through to the client and holds each watch to its daily reads.
+
+    The cadence budgets the searches. Every other call a watch causes is a read, counted
+    here per watch and UTC day: a detail fetch for a new listing, a refresh of a tracked
+    one. The four sweeps a day are bounded by their own schedule, and with the reads they
+    make up the 25 calls a watch is allowed.
+
+    A detail fetch for a watch that has made its reads is refused with a kind of
+    EbayBudgetExceeded, which the funnel already knows: it stops, and the listings it has
+    not reached are found again by a later search. The poller asks `refreshes_left` itself
+    before a paced refresh. The read made for an alert that is about to go out is counted
+    but never refused: an alert does not wait on a budget.
+
+    It is also the circuit breaker for eBay. Once a call has found eBay unreachable (no
+    network, no token, a 429), every later call of the tick fails the same way without a
+    request: a poll that wakes up offline must not sit through a timeout per listing.
+    """
+
+    def __init__(self, client: Any, store: Store) -> None:
+        self.client = client
+        self.store = store
+        self.watch_id = 0               # whose work the reads are; the poller sets it
+        self.unreachable: Optional[str] = None      # what the call that found eBay out of reach said
+
+    def search(self, q: Optional[str] = None, **options: Any) -> Dict[str, Any]:
+        return self._call(lambda: self.client.search(q, **options))
+
+    def get_item(self, item_id: str, *, compact: bool = False, purpose: str = "detail") -> Dict[str, Any]:
+        return self._read(purpose, lambda: self.client.get_item(item_id, compact=compact, purpose=purpose))
+
+    def get_items_by_item_group(self, item_group_id: str, *, purpose: str = "detail") -> List[Dict[str, Any]]:
+        return self._read(purpose, lambda: self.client.get_items_by_item_group(item_group_id, purpose=purpose))
+
+    def reads_left(self, watch_id: int) -> int:
+        """How many more reads of any kind a watch may make today."""
+        return READS_PER_WATCH - sum(self._made(watch_id).values())
+
+    def refreshes_left(self, watch_id: int) -> int:
+        """How many more of a watch's reads today may be paced refreshes."""
+        return min(self.reads_left(watch_id), REFRESHES_PER_WATCH - self._made(watch_id)["refresh"])
+
+    def _made(self, watch_id: int) -> Dict[str, int]:
+        counts = self.store.ledger_breakdown(WATCH_READS)
+        return {purpose: counts.get("%d:%s" % (watch_id, purpose), 0) for purpose in READ_PURPOSES}
+
+    def _read(self, purpose: str, call: Callable[[], Any]) -> Any:
+        """One call that is not a search, counted against the watch it is made for."""
+        if purpose == "detail" and self.reads_left(self.watch_id) <= 0:
+            raise _AllowanceSpent("watch %d has made its eBay reads for today; no request was sent" % self.watch_id)
+        try:
+            answer = self._call(call)
+        except (EbayBudgetExceeded, EbayUnreachable):
+            # Not counted: nothing came back, and an outage must not use up a watch's day.
+            raise
+        except EbayError:
+            self._count(purpose)
+            raise
+        self._count(purpose)
+        return answer
+
+    def _count(self, purpose: str) -> None:
+        self.store.ledger_add(WATCH_READS, "%d:%s" % (self.watch_id, purpose))
+
+    def _call(self, call: Callable[[], Any]) -> Any:
+        if self.unreachable is not None:
+            raise EbayUnreachable("%s (no more eBay calls were made in this tick)" % self.unreachable)
+        try:
+            return call()
+        except EbayUnreachable as problem:
+            self.unreachable = str(problem)
+            raise
 
 
 class _Tick:
@@ -250,15 +369,22 @@ class _Tick:
                  funnel: Optional[Any], transport: Optional[Any]) -> None:
         self.settings = settings
         self.store = store
-        self.ebay = ebay
+        self.ebay = _EbayMeter(ebay, store)
         self.models = _ModelMeter(crusoe)
         self.notifier = notifier
         self.transport = transport if transport is not None else UrllibTransport()
         self.funnel = funnel or Funnel(
-            ebay, self.models, store, image_fetcher=partial(fetch_image, transport=self.transport)
+            self.ebay, self.models, store, image_fetcher=partial(fetch_image, transport=self.transport)
         )
-        # Set once eBay or Crusoe has refused in a way that would repeat for every later call.
-        self.stopped = False
+        # Set once eBay has failed in a way that every later call of this tick would repeat:
+        # a refused keyset, a spent budget, a missing setting, no network.
+        self.ebay_stopped = False
+        # The same for Crusoe: a refused key. The two are kept apart because one does not
+        # need the other: without models, tracked listings are still read and held alerts
+        # still go out.
+        self.models_stopped = False
+        # Tracked listings read by this tick's refresh, which a waiting alert need not read again.
+        self.read_now: Set[int] = set()
         # Listings a model could not judge in this tick, for the style-code fallback.
         self.unjudged: List[Tuple[Dict[str, Any], FunnelResult]] = []
         self.notices: Dict[str, Tuple[str, bool]] = {}
@@ -270,6 +396,8 @@ class _Tick:
             "queued": 0, "not_model_checked": 0,
             "delivery": {"sent": 0, "held": 0, "dropped": 0, "failed": 0},
             "notices": [], "cadence": {}, "heartbeat": None, "problems": [],
+            # Watches whose refreshes or new listings waited because their reads for today are used.
+            "allowance_spent": [],
         }
 
     @property
@@ -299,30 +427,47 @@ class _Tick:
         if line not in self.report["problems"]:
             self.report["problems"].append(line)
 
-    def _stop(self, area: str, message: str) -> None:
-        self.stopped = True
-        self._problem(area, message)
+    def _waits(self, watch_id: int) -> None:
+        """Note that some of a watch's work is waiting because its reads for today are used."""
+        if watch_id not in self.report["allowance_spent"]:
+            self.report["allowance_spent"].append(watch_id)
+
+    def _ebay_is_out(self, problem: EbayError) -> None:
+        """eBay failed in a way every later call of this tick would repeat: stop calling it.
+
+        That is a spent budget, a refused keyset, or eBay out of reach. None of them says
+        anything about the listing or watch that happened to run into it.
+        """
+        if isinstance(problem, EbayAuthError):
+            self.notices["ebay_auth"] = (EBAY_AUTH_NOTICE, True)
+        self.ebay_stopped = True
+        self._problem("ebay", BUDGET_MESSAGE if isinstance(problem, EbayBudgetExceeded) else str(problem))
 
     def _guard(self, label: str, work: Callable[..., None], *args: Any) -> None:
         """Run one unit of work and turn its failure into a line of the report.
 
-        A refused key, a spent budget or a missing setting would fail every later call the
-        same way, so those also stop the eBay phases of this tick. Anything else, a bug
-        included, costs only the listing or watch it happened in: the poller runs unattended,
-        and one bad watch must not silence the others.
+        A refused key, a spent budget, a missing setting or eBay out of reach would fail
+        every later call the same way, so those also stop the calls to that service for the
+        rest of the tick: eBay's or Crusoe's, not both. Anything else, a bug included, costs
+        only the listing or watch it happened in: the poller runs unattended, and one bad
+        watch must not silence the others.
         """
         try:
             work(*args)
-        except EbayBudgetExceeded:
-            self._stop("ebay", BUDGET_MESSAGE)
-        except EbayAuthError as problem:
-            self.notices["ebay_auth"] = (EBAY_AUTH_NOTICE, True)
-            self._stop("ebay", str(problem))
+        except (EbayBudgetExceeded, EbayAuthError, EbayUnreachable) as problem:
+            self._ebay_is_out(problem)
         except CrusoeAuthError as problem:
             self.notices["crusoe_auth"] = (CRUSOE_AUTH_NOTICE, True)
-            self._stop("crusoe", str(problem))
+            self.models_stopped = True
+            self._problem("crusoe", str(problem))
         except ConfigError as problem:
-            self._stop("config", str(problem))
+            # eBay's settings are needed first, so a setting that is missing while eBay has
+            # its own is one of Crusoe's.
+            if self.settings.has("ebay"):
+                self.models_stopped = True
+            else:
+                self.ebay_stopped = True
+            self._problem("config", str(problem))
         except (EbayError, CrusoeError) as problem:
             self._problem(label, str(problem))
         except Exception as problem:  # noqa: BLE001 - see the docstring
@@ -334,70 +479,103 @@ class _Tick:
     # ---- phase 2: refresh tracked listings -----------------------------------------
 
     def _refresh_due(self) -> None:
+        """Read the tracked listings whose time has come, soonest-ending first.
+
+        A watch that has made its refreshes for today is passed over. Its listings stay due,
+        so tomorrow's first reads go to the ones that end soonest.
+        """
         for candidate in self.store.due_for_refresh():
-            if self.stopped:
+            if self.ebay_stopped:
                 break
+            if self.ebay.refreshes_left(candidate["watch_id"]) <= 0:
+                self._waits(candidate["watch_id"])
+                continue
             self._guard("refresh %s" % candidate["code"], self._refresh, candidate)
 
     def _refresh(self, candidate: Dict[str, Any]) -> None:
         """Bring one tracked listing up to date, or find out that it is over.
 
         A compact read is enough for prices and bids. The full listing is read when only
-        its end date can settle things: the scheduled end has passed, the listing has just
-        gone out of stock, or four slow retries have failed.
+        its end date can settle things (the scheduled end has passed, the listing has just
+        gone out of stock, or four slow retries have failed) and when the last full read is
+        over six hours old, so that what a card shows beside the price is never older.
+
+        Only an answer about this listing is held against it. A spent budget, a refused
+        keyset or eBay out of reach is raised for `_guard`, which stops the refresh phase:
+        the listing's retry count and its next refresh time stay as they were.
         """
         retry = self.store.kv_get(RETRY_KEY % candidate["id"]) or {}
-        confirm = self._end_passed(candidate) or retry.get("failures", 0) >= len(RETRY_DELAYS)
+        full = retry.get("failures", 0) >= len(RETRY_DELAYS) or self._needs_full_read(candidate)
         try:
-            fresh = self._read(candidate, full=confirm)
-            if not confirm and _just_sold_out(candidate, fresh):
-                fresh, confirm = self._read(candidate, full=True), True
-        except (EbayAuthError, EbayBudgetExceeded):
+            fresh = self._read(candidate, full=full)
+            if not full and _just_sold_out(candidate, fresh):
+                fresh, full = self._read(candidate, full=True), True
+        except (EbayAuthError, EbayBudgetExceeded, EbayUnreachable):
             raise
         except EbayError as problem:
             self._refresh_failed(candidate, retry, problem)
             return
-        end = parse_iso(fresh.get("end_at"))
-        if confirm and end is not None and end <= self.now:
+        if full and self._is_over(fresh):
             self._end(candidate)
             return
-        self._follow_up(self._keep(candidate, retry, fresh, full=confirm))
+        self._follow_up(self._keep(candidate, retry, fresh, full=full))
 
     def _read(self, candidate: Mapping[str, Any], full: bool) -> Dict[str, Any]:
         """One eBay call for a tracked listing. For a multi-size listing the snapshot holds
         the id of the variation that was judged, which is the one to read again."""
         item_id = (candidate["listing"] or {}).get("item_id") or candidate["item_id"]
+        self.ebay.watch_id = candidate["watch_id"]
         return self.ebay.get_item(item_id, compact=not full, purpose="refresh")
 
     def _end_passed(self, candidate: Mapping[str, Any]) -> bool:
         end = parse_iso(candidate["end_at"])
         return end is not None and end <= self.now
 
+    def _is_over(self, fresh: Mapping[str, Any]) -> bool:
+        """True when a full read says the listing's end is behind us."""
+        end = parse_iso(fresh.get("end_at"))
+        return end is not None and end <= self.now
+
+    def _full_read_is_old(self, candidate: Mapping[str, Any]) -> bool:
+        """True when the snapshot was last read in full over six hours ago, or nobody knows when."""
+        read = parse_iso((candidate["listing"] or {}).get(FULL_READ_AT))
+        return read is None or self.now - read > CARD_LIFE
+
+    def _needs_full_read(self, candidate: Mapping[str, Any]) -> bool:
+        """True when a compact read would not do: the end date has to be seen, or the
+        snapshot's shipping, condition and end time are too old to show."""
+        return self._end_passed(candidate) or self._full_read_is_old(candidate)
+
     def _keep(self, candidate: Mapping[str, Any], retry: Mapping[str, Any], fresh: Mapping[str, Any],
               full: bool) -> Dict[str, Any]:
         """Store what a read returned, schedule the next one, and return the updated row."""
         now = self.now
         listing = dict(candidate["listing"] or {})
-        listing.update(snapshot(fresh) if full else {key: fresh.get(key) for key in COMPACT_KEYS})
+        listing.update(snapshot(fresh, iso(now)) if full else {key: fresh.get(key) for key in COMPACT_KEYS})
         end_at = fresh.get("end_at") if full else candidate["end_at"]
+        # A listing that was unreadable for a while goes back to the state it had.
+        state = retry.get("was") or candidate["state"]
+        due = next_refresh(listing, end_at, now, parked=_left_to_sweep(state, candidate["reason"]))
         with self.store.transaction():
             self.store.update_candidate(
                 candidate["id"], listing=listing, end_at=end_at, fetched_at=iso(now),
-                next_refresh_at=iso(next_refresh(listing, end_at, now)),
-                # A listing that was unreadable for a while goes back to the state it had.
-                state=retry.get("was") or candidate["state"],
+                next_refresh_at=iso(due), state=state,
             )
             self.store.kv_delete(RETRY_KEY % candidate["id"])
         self.report["refreshed"] += 1
+        self.read_now.add(candidate["id"])
         return self.store.get_candidate_by_id(candidate["id"])  # type: ignore[return-value]
 
-    def _refresh_failed(self, candidate: Mapping[str, Any], retry: Mapping[str, Any], problem: EbayError) -> bool:
-        """A tracked listing could not be read. Returns True when that settles it as over.
+    def _refresh_failed(self, candidate: Mapping[str, Any], retry: Mapping[str, Any], problem: EbayError) -> None:
+        """A paced read of a tracked listing got an answer that is about the listing: count it.
 
         One failure settles nothing: listings come back, and eBay has bad minutes. The
         listing is marked unavailable and read again after 1, 6, 24 and 72 hours. It is over
         on a second "not found", on a second failure once its scheduled end has passed, or
         when the full read after the fourth retry fails as well.
+
+        Only the paced refresh counts, because only it is paced. The read made for a
+        waiting alert runs on every tick and must never come here.
         """
         failures = retry.get("failures", 0) + 1
         not_found = retry.get("not_found", 0) + int(isinstance(problem, EbayNotFound))
@@ -405,16 +583,18 @@ class _Tick:
             self._problem("refresh %s" % candidate["code"], str(problem))
         if not_found >= 2 or (failures >= 2 and self._end_passed(candidate)) or failures > len(RETRY_DELAYS):
             self._end(candidate)
-            return True
+            return
+        self._set_aside(candidate, retry, failures, not_found, self.now + RETRY_DELAYS[failures - 1])
+
+    def _set_aside(self, candidate: Mapping[str, Any], retry: Mapping[str, Any], failures: int, not_found: int,
+                   retry_at: datetime) -> None:
+        """Mark a tracked listing unavailable until `retry_at`, remembering the state it had."""
         with self.store.transaction():
             self.store.kv_set(RETRY_KEY % candidate["id"], {
                 "failures": failures, "not_found": not_found, "was": retry.get("was") or candidate["state"],
             })
-            self.store.update_candidate(
-                candidate["id"], state="unavailable", next_refresh_at=iso(self.now + RETRY_DELAYS[failures - 1]),
-            )
+            self.store.update_candidate(candidate["id"], state="unavailable", next_refresh_at=iso(retry_at))
         self.report["unavailable"] += 1
-        return False
 
     def _end(self, candidate: Mapping[str, Any]) -> None:
         """The listing is over: rewrite its messages as "Ended" and delete what was stored about it."""
@@ -473,15 +653,28 @@ class _Tick:
         cadence = cadence_minutes(hot, len(watches) - hot, self.settings.ebay_daily_cap)
         self.report["cadence"] = cadence
         for watch in sorted(watches, key=lambda row: row["tier"] != "hot"):
-            if not self.stopped and self._search_is_due(watch, cadence):
+            if not self.ebay_stopped and self._search_is_due(watch, cadence):
                 self._guard("watch %d" % watch["id"], self._search, watch)
-            if not self.stopped and self._sweep_is_due(watch["id"]):
+            # A sweep needs eBay only, so it also runs while the models are stopped.
+            if not self.ebay_stopped and self._sweep_is_due(watch["id"]):
                 self._guard("watch %d sweep" % watch["id"], self._sweep, watch)
 
     def _search_is_due(self, watch: Mapping[str, Any], cadence: Mapping[str, int]) -> bool:
+        """True when the watch's cadence says so and a search could lead somewhere.
+
+        A new listing is judged by the models and then read in full. With the models
+        stopped, or the watch's reads for today used up, a search would only be repeated
+        later for the same listings, so it waits. The window stays where it is and the
+        next search that does run covers what this one would have.
+        """
         last = parse_iso(watch["last_search_at"])
         every = timedelta(minutes=cadence["hot" if watch["tier"] == "hot" else "normal"])
-        return last is None or self.now - last >= every - DUE_SLACK
+        if self.models_stopped or not (last is None or self.now - last >= every - DUE_SLACK):
+            return False
+        if self.ebay.reads_left(watch["id"]) <= 0:
+            self._waits(watch["id"])
+            return False
+        return True
 
     def _search(self, watch: Dict[str, Any]) -> None:
         """Search one watch's window, judge what is new, and queue its alerts.
@@ -494,10 +687,9 @@ class _Tick:
         start = window_start(watch, now)
         listings, too_many = self._pages(plan, start, now)
         self._flag_overflow(watch["id"], too_many)
-        results = self.funnel.run(watch, listings)
-        self._tally(results)
+        results = self._judge(watch, listings)
         waiting = [result for result in results if result.decision == "pending"]
-        self.unjudged.extend((watch, result) for result in waiting if result.reason == REASON_MODEL_ERROR)
+        self.unjudged.extend((watch, result) for result in waiting if result.reason in UNJUDGED_REASONS)
         with self.store.transaction():
             self._announce(watch)
             # A listing without a verdict is only looked at again when a search returns it,
@@ -532,15 +724,27 @@ class _Tick:
         else:
             self.store.kv_delete(OVERFLOW_KEY % watch_id)
 
-    def _tally(self, results: Sequence[FunnelResult]) -> None:
-        """Count the funnel's decisions and pick out what it absorbed that the report should show."""
+    def _judge(self, watch: Mapping[str, Any], listings: Sequence[Dict[str, Any]],
+               recheck: bool = False) -> List[FunnelResult]:
+        """Run the funnel for one watch, with its detail fetches counted against that watch.
+
+        Returns the funnel's results, after counting its decisions and picking out what it
+        absorbed that the report should show.
+        """
+        self.ebay.watch_id = watch["id"]
+        results = self.funnel.run(watch, listings, recheck=recheck)
         counts = self.report["decisions"]
         for result in results:
             counts[result.decision] = counts.get(result.decision, 0) + 1
-            if result.reason == REASON_BUDGET:
-                self._stop("ebay", BUDGET_MESSAGE)
-            elif result.reason in ("ebay_unavailable", "ebay_error"):
+            if result.reason in ("ebay_unavailable", "ebay_error"):
                 self._problem("ebay", "a listing could not be read (%s)" % result.reason)
+            elif result.reason != REASON_BUDGET:
+                continue
+            elif self.ebay.reads_left(watch["id"]) <= 0:
+                self._waits(watch["id"])        # the watch's own allowance, not the day's cap
+            else:
+                self._ebay_is_out(EbayBudgetExceeded(BUDGET_MESSAGE))
+        return results
 
     def _sweep_is_due(self, watch_id: int) -> bool:
         """Every six hours, and only for a watch with tracked listings: a sweep finds nothing new.
@@ -578,7 +782,12 @@ class _Tick:
                 if seen is None or listing.get("item_id") != seen["item_id"]:
                     continue
                 listing = dict(listing, **{key: seen.get(key) for key in SWEEP_KEYS})
-                self.store.update_candidate(candidate["id"], listing=listing)
+                changes: Dict[str, Any] = {"listing": listing}
+                if _left_to_sweep(candidate["state"], candidate["reason"]):
+                    # Seen alive and re-priced just now, so its own read can wait another day.
+                    due = next_refresh(listing, candidate["end_at"], self.now, parked=True)
+                    changes["next_refresh_at"] = iso(due)
+                self.store.update_candidate(candidate["id"], **changes)
                 kind = _released(spec, candidate, listing) if candidate["state"] == "parked" else None
                 if kind:
                     released[candidate["id"]] = kind
@@ -594,13 +803,31 @@ class _Tick:
         `kinds` maps candidate id to the alert kind ("price" or "restock") for a listing
         that now passes. If the tick dies between the funnel's verdict and the alert, the
         next search still announces the listing, as a plain new match.
+
+        A listing that is rejected this time was tracked until now, so cards may be out for
+        it (it was announced, sold out and came back). The funnel deletes what was stored
+        about it; its cards are rewritten here, so none keeps showing a title and a price.
+
+        Judging needs the models and one eBay read. While either is out for this tick or
+        this watch, the listings stay parked; the next sweep or read finds them again.
         """
-        self._tally(self.funnel.run(watch, listings, recheck=True))
+        if self.models_stopped or self.ebay_stopped:
+            return
+        if self.ebay.reads_left(watch["id"]) <= 0:
+            self._waits(watch["id"])
+            return
+        results = self._judge(watch, listings, recheck=True)
+        for result in results:
+            if result.decision == "reject" and result.candidate is not None:
+                self.notifier.mark_ended(result.candidate["id"])
         spec = normalize_spec(watch["spec"])
         with self.store.transaction():
             for candidate_id, kind in kinds.items():
                 candidate = self.store.get_candidate_by_id(candidate_id)
                 if candidate and candidate["tracked"] and candidate["state"] in ANNOUNCED_STATES:
+                    # A match again: from here on it is read as often as any other.
+                    due = next_refresh(candidate["listing"], candidate["end_at"], self.now)
+                    self.store.update_candidate(candidate_id, next_refresh_at=iso(due))
                     self._enqueue(watch, spec, candidate, kind, self._verdict_key(kind, candidate_id))
             self._announce(watch)
 
@@ -617,7 +844,8 @@ class _Tick:
         for candidate in self.store.list_candidates(watch["id"], tracked=True):
             if candidate["next_refresh_at"] is None:
                 fetched = parse_iso(candidate["fetched_at"]) or self.now
-                due = next_refresh(candidate["listing"] or {}, candidate["end_at"], fetched)
+                due = next_refresh(candidate["listing"] or {}, candidate["end_at"], fetched,
+                                   parked=_left_to_sweep(candidate["state"], candidate["reason"]))
                 self.store.update_candidate(candidate["id"], next_refresh_at=iso(due))
             if candidate["state"] in ANNOUNCED_STATES and not self._announced(candidate["id"]):
                 self._enqueue(watch, spec, candidate, "new", self._verdict_key("new", candidate["id"]))
@@ -656,12 +884,28 @@ class _Tick:
             note=NOT_MODEL_CHECKED_NOTE if candidate["reason"] == REASON_NOT_MODEL_CHECKED else None,
             as_of=candidate["fetched_at"],
         )
+        payload.update(self._card_facts(candidate))
         queued = self.store.enqueue_alert(
             key, kind, tier, payload, watch_id=watch["id"], candidate_id=candidate["id"],
             as_of=candidate["fetched_at"],
         )
         if queued is not None:
             self.report["queued"] += 1
+
+    def _card_facts(self, candidate: Mapping[str, Any]) -> Dict[str, Any]:
+        """The facts of a tracked listing that change, as a card may show them right now.
+
+        Prices and bids are as fresh as the snapshot's last read of any kind. Shipping,
+        condition and the end time come from full reads only. The poller reads in full
+        before it builds or releases a card whenever the last full read is over six hours
+        old; should a snapshot be that old all the same, those three are left off the card,
+        so that nothing stale appears under a fresh "as of".
+        """
+        listing = candidate["listing"] or {}
+        facts = {key: listing.get(key) for key in COMPACT_KEYS if key != "availability"}
+        stale = self._full_read_is_old(candidate)
+        facts.update({key: None if stale else listing.get(key) for key in FULL_READ_KEYS})
+        return facts
 
     # ---- model-free fallback -------------------------------------------------------
 
@@ -681,11 +925,12 @@ class _Tick:
                 continue
             if rules.over_ceiling(spec, asking_price(listing), listing.get("shipping")):
                 continue
+            read_at = self.store.now_iso()      # the search result is this tick's own
             with self.store.transaction():
                 row = self.store.upsert_candidate(
                     watch["id"], result.item_id, "maybe", reason=REASON_NOT_MODEL_CHECKED, tracked=True,
-                    listing=snapshot(listing), legacy_item_id=listing.get("legacy_item_id"),
-                    end_at=listing.get("end_at"), fetched_at=self.store.now_iso(), purge_at=None,
+                    listing=snapshot(listing, read_at), legacy_item_id=listing.get("legacy_item_id"),
+                    end_at=listing.get("end_at"), fetched_at=read_at, purge_at=None,
                 )
                 self.store.add_verdict(
                     row["id"], "decision", fields={"style_code": {"verdict": MATCH, "source": "title"}},
@@ -696,7 +941,7 @@ class _Tick:
 
     def _note_model_calls(self) -> None:
         if self.models.unavailable:
-            self._problem("crusoe", "%d model call(s) failed: the service was unavailable" % self.models.unavailable)
+            self._problem("crusoe", CRUSOE_DOWN_MESSAGE)
         if self.models.unusable:
             self._problem("crusoe", "%d model call(s) gave no usable answer" % self.models.unusable)
 
@@ -707,29 +952,52 @@ class _Tick:
 
         Returns None when there is nothing left to alert on: the listing is no longer
         tracked, is over, or is sold out. Raises EbayError when it could not be read just
-        now, which keeps the alert waiting.
+        now, and `alerts.NotReady` when it is not being read just now; both keep the alert
+        waiting.
+
+        A failed read here is never counted against the listing. This runs on every tick
+        for as long as an alert waits, so counting would end a live listing within minutes
+        of eBay or the network going away. Whether a listing is over is for the paced
+        refresh to find out, at its own pace. While that is retrying a listing, the alert
+        waits for it and no call is made here.
         """
         candidate = self.store.get_candidate_by_id(alert["candidate_id"])
         if candidate is None or not candidate["tracked"] or not candidate["listing"]:
             return None
-        if self.stopped:
-            raise EbayUnavailable("eBay is not being called for the rest of this tick")
-        retry = self.store.kv_get(RETRY_KEY % candidate["id"]) or {}
-        try:
-            fresh = self._read(candidate, full=False)
-        except ConfigError as problem:
-            raise EbayUnavailable(str(problem)) from None
-        except (EbayAuthError, EbayBudgetExceeded):
-            raise
-        except EbayError as problem:
-            if self._refresh_failed(candidate, retry, problem):
+        if candidate["id"] not in self.read_now:
+            fresh, full = self._read_for_release(candidate)
+            if fresh.get("availability") == OUT_OF_STOCK or (full and self._is_over(fresh)):
                 return None
-            raise
-        if fresh.get("availability") == OUT_OF_STOCK:
+            candidate = self._keep(candidate, {}, fresh, full=full)
+        elif candidate["listing"].get("availability") == OUT_OF_STOCK:
             return None
-        row = self._keep(candidate, retry, fresh, full=False)
-        return dict(alert["payload"], as_of=row["fetched_at"],
-                    **{key: row["listing"].get(key) for key in COMPACT_KEYS if key in alert["payload"]})
+        return dict(alert["payload"], as_of=candidate["fetched_at"], **self._card_facts(candidate))
+
+    def _read_for_release(self, candidate: Mapping[str, Any]) -> Tuple[Dict[str, Any], bool]:
+        """Read a listing whose alert is about to go out: (what eBay returned, whether in full).
+
+        The read is in full when the snapshot's last full read is over six hours old, so
+        the card's shipping, condition and end time are as current as its price.
+        """
+        if candidate["state"] == "unavailable":
+            raise alerts.NotReady("the listing could not be read lately; its next retry decides")
+        if self.ebay_stopped:
+            raise alerts.NotReady("eBay is not being called for the rest of this tick")
+        full = self._needs_full_read(candidate)
+        try:
+            return self._read(candidate, full=full), full
+        except ConfigError as problem:
+            self.ebay_stopped = True
+            self._problem("config", str(problem))
+            raise alerts.NotReady(str(problem)) from None
+        except (EbayAuthError, EbayBudgetExceeded, EbayUnreachable) as problem:
+            self._ebay_is_out(problem)
+            raise
+        except EbayError:
+            # An answer about the listing itself. It is set aside with nothing counted, and
+            # the paced refresh, due at once, takes it from here.
+            self._set_aside(candidate, {}, 0, 0, self.now)
+            raise
 
     # ---- phase 6: safety notices ---------------------------------------------------
 
@@ -817,6 +1085,15 @@ def _just_sold_out(candidate: Mapping[str, Any], fresh: Mapping[str, Any]) -> bo
     """
     before = (candidate["listing"] or {}).get("availability")
     return fresh.get("availability") == OUT_OF_STOCK and before != OUT_OF_STOCK
+
+
+def _left_to_sweep(state: str, reason: Optional[str]) -> bool:
+    """True for a listing parked over the price ceiling, which the sweep re-prices.
+
+    A listing parked because its size sold out is not: a search result does not say
+    whether a size is back, so that one keeps its own reads.
+    """
+    return state == "parked" and reason == "over_ceiling"
 
 
 def _released(spec: Mapping[str, Any], candidate: Mapping[str, Any], listing: Mapping[str, Any]) -> Optional[str]:

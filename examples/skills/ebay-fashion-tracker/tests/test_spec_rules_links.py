@@ -134,6 +134,73 @@ class SizeRules(unittest.TestCase):
         self.assertEqual(rules.check_size({"value": "7", "system": "US"}, [{"value": "7Y", "system": "US"}]), MISMATCH)
         self.assertEqual(rules.check_size({"value": "10", "system": None}, [{"value": "10", "system": "US"}]), UNKNOWN)
 
+    def test_a_value_that_repeats_the_aspects_own_system_is_read_as_the_bare_size(self):
+        want = {"value": "10", "system": "US"}
+        for typed in ("US 10", "10 US", "us10", "US 10.0"):
+            stated = rules.sizes_from_aspects({"US Shoe Size": [typed]})
+            self.assertEqual([(s["system"], s["value"]) for s in stated], [("US", "10")], typed)
+            self.assertEqual(rules.check_size(want, stated), MATCH, typed)
+        self.assertEqual(rules.check_size(want, rules.sizes_from_aspects({"US Shoe Size": ["US 9"]})), MISMATCH)
+        eu = rules.sizes_from_aspects({"EU Shoe Size": ["EUR 44"]})
+        self.assertEqual(rules.check_size({"value": "44", "system": "EU"}, eu), MATCH)
+
+    def test_a_value_that_is_not_one_plain_size_cannot_reject_a_listing(self):
+        want = {"value": "10", "system": "US"}
+        for typed in ("10 M", "Men's 10", "10.5 / UK 9.5", "UK 9", "See description"):
+            stated = rules.sizes_from_aspects({"US Shoe Size": [typed]})
+            self.assertEqual(rules.check_size(want, stated), UNKNOWN, typed)
+        # One unreadable value beside a readable one still leaves the question open...
+        self.assertEqual(rules.check_size(want, rules.sizes_from_aspects({"US Shoe Size": ["9", "Men's 10"]})), UNKNOWN)
+        # ...while plain sizes are compared as before, fractions included.
+        self.assertEqual(rules.check_size(want, rules.sizes_from_aspects({"US Shoe Size": ["9", "9.5"]})), MISMATCH)
+        thirds = rules.sizes_from_aspects({"EU Shoe Size": ["44 2/3"]})
+        self.assertEqual(rules.check_size({"value": "44 2/3", "system": "EU"}, thirds), MATCH)
+        self.assertEqual(rules.check_size({"value": "44", "system": "EU"}, thirds), MISMATCH)
+        # A wanted size typed with a width is matched word for word, and never contradicted.
+        wide = {"value": "10 W", "system": "US"}
+        self.assertEqual(rules.check_size(wide, rules.sizes_from_aspects({"US Shoe Size": ["10 W"]})), MATCH)
+        self.assertEqual(rules.check_size(wide, rules.sizes_from_aspects({"US Shoe Size": ["10"]})), UNKNOWN)
+
+    def test_a_waist_and_inseam_pair_is_one_size_however_it_is_typed(self):
+        for typed in ("32x34", "32 X 34", "32/34", "W32 L34", "w32/l34", "32W x 34L", "32W 34L"):
+            self.assertEqual(rules.normalize_size_value(typed), "32X34", typed)
+            self.assertEqual(rules.normalize_size_value(typed, "waist_inseam"), "32X34", typed)
+        # Under a size system of its own a pair of numbers is two sizes, and is left as typed.
+        self.assertEqual(rules.normalize_size_value("11/12", "US"), "11/12")
+        self.assertEqual(rules.normalize_size_value("10 1/2"), "10.5", "a fraction is not a pair")
+        found = rules.waist_inseam_sizes("Tagged W32 L34, measures 31x33. Not 32x34.5, 132x34 or 30x32-34.")
+        self.assertEqual(found, ["32X34", "31X33"])
+
+    def test_a_jeans_size_is_read_from_item_specifics(self):
+        want = {"value": "32x34", "system": "waist_inseam"}
+        stated = rules.sizes_from_aspects({"Size": ["32x34"], "Size Type": ["Regular"]})
+        self.assertEqual([(s["system"], s["value"]) for s in stated], [("waist_inseam", "32X34")])
+        self.assertEqual(rules.check_size(want, stated), MATCH)
+        self.assertEqual(rules.check_size(want, rules.sizes_from_aspects({"Size": ["W32 L34"]})), MATCH)
+        self.assertEqual(rules.check_size(want, rules.sizes_from_aspects({"Size": ["34x32"]})), MISMATCH)
+        self.assertEqual(rules.check_size(want, rules.sizes_from_aspects({"Size": ["32"]})), UNKNOWN)
+        # A shoe size typed "11/12" is as it was: two sizes, which cannot reject a US 11 watch.
+        shoes = rules.sizes_from_aspects({"US Shoe Size": ["11/12"]})
+        self.assertEqual([(s["system"], s["value"]) for s in shoes], [("US", "11/12")])
+        self.assertEqual(rules.check_size({"value": "11", "system": "US"}, shoes), UNKNOWN)
+
+    def test_a_waist_and_an_inseam_given_as_two_measurements_can_prove_but_not_contradict(self):
+        want = {"value": "32x34", "system": "waist_inseam"}
+
+        def check(**aspects):
+            return rules.check_size(want, rules.sizes_from_aspects(aspects))
+        self.assertEqual(check(**{"Waist Size": ["32 in"], "Inseam": ['34"']}), MATCH)
+        self.assertEqual(check(**{"Waist": ["32"], "Inseam": ["34 inches"]}), MATCH)
+        # A worn pair can measure smaller than its label says, so a difference settles nothing...
+        self.assertEqual(check(**{"Waist Size": ["31 in"], "Inseam": ["33 in"]}), UNKNOWN)
+        # ...unless the listing also states the size itself.
+        self.assertEqual(check(**{"Size": ["32x34"], "Waist Size": ["31 in"], "Inseam": ["33 in"]}), MATCH)
+        self.assertEqual(check(**{"Size": ["30x32"], "Waist Size": ["30 in"], "Inseam": ["32 in"]}), MISMATCH)
+        # Half a measurement, two waists or a fraction of an inch is not a size.
+        self.assertEqual(check(**{"Waist Size": ["32 in"]}), UNKNOWN)
+        self.assertEqual(check(**{"Waist Size": ["32 in", "33 in"], "Inseam": ["34 in"]}), UNKNOWN)
+        self.assertEqual(check(**{"Waist Size": ["32.5 in"], "Inseam": ["34 in"]}), UNKNOWN)
+
 
 class DepartmentAndStyleCode(unittest.TestCase):
     def test_kids_markers_are_strict(self):
@@ -157,6 +224,36 @@ class DepartmentAndStyleCode(unittest.TestCase):
         self.assertEqual(rules.check_department(kids, {}, "Nike Dunk Low GS"), MATCH)
         self.assertEqual(rules.check_department(kids, {"Department": ["Men"]}), MISMATCH)
         self.assertEqual(rules.check_department(kids, {}, "Nike Dunk Low"), UNKNOWN)
+
+    def test_a_listing_for_men_and_women_matches_either(self):
+        for stated in (["Men", "Women"], ["Men, Women"], ["Women", "Men"]):
+            for wanted in ("men", "women", "unisex"):
+                verdict = rules.check_department(dunk_spec(department=wanted), {"Department": stated})
+                self.assertEqual(verdict, MATCH, (stated, wanted))
+            self.assertEqual(rules.check_department(dunk_spec(department="kids"), {"Department": stated}), MISMATCH)
+        # One value still means one department: "Women" is not also "men".
+        self.assertEqual(rules.check_department(dunk_spec(), {"Department": ["Womens"]}), MISMATCH)
+        self.assertEqual(rules.check_department(dunk_spec(department="women"), {"Department": ["Mens"]}), MISMATCH)
+        # A listing for men and boys is not a mismatch for either watch.
+        both = {"Department": ["Men", "Boys"]}
+        self.assertEqual(rules.check_department(dunk_spec(), both), MATCH)
+        self.assertEqual(rules.check_department(dunk_spec(department="kids"), both), MATCH)
+        self.assertEqual(rules.check_department(dunk_spec(department="women"), both), MISMATCH)
+
+    def test_a_kids_marker_in_the_watchs_own_brand_or_model_is_not_a_size(self):
+        paul_smith = spec.normalize_spec({"brand": "PS Paul Smith", "model": "Rex Sneaker", "department": "men"})
+        title = "PS Paul Smith Rex Sneakers White Leather Mens"
+        self.assertTrue(rules.has_kids_markers(title), "on its own the token still reads as Preschool")
+        self.assertIsNone(rules.title_conflict(paul_smith, title))
+        self.assertEqual(rules.check_department(paul_smith, {}, title), UNKNOWN)
+        self.assertEqual(rules.check_department(paul_smith, {"Department": ["Men"]}, title), MATCH)
+        # Any other marker in the same title still counts.
+        for kids in ("PS Paul Smith Rex Sneakers GS", "Paul Smith PS Rex sneaker 4Y", "PS Paul Smith Rex Toddler"):
+            self.assertEqual(rules.title_conflict(paul_smith, kids), "mismatch:department", kids)
+            self.assertEqual(rules.check_department(paul_smith, {}, kids), MISMATCH, kids)
+        # A kids' watch whose model carries the marker is still matched by it.
+        gs = spec.normalize_spec({"brand": "Nike", "model": "Dunk Low GS", "department": "kids"})
+        self.assertEqual(rules.check_department(gs, {}, "Nike Dunk Low GS Panda"), MATCH)
 
     def test_check_style_code(self):
         s = dunk_spec()
@@ -197,6 +294,10 @@ class PriceAndTitleRules(unittest.TestCase):
         fields = {"size": MATCH, "style_code": MATCH, "colorway": MATCH, "brand": UNKNOWN}
         line = rules.proof_line(s, fields, {"size": "item specifics", "style_code": "title", "colorway": "photo"})
         self.assertEqual(line, "DD1391-100 (title) · Colorway White/Black (photo) · Size US 10 (item specifics)")
+        jeans = spec.normalize_spec({"brand": "Levi's", "model": "501", "size": "32x34"})
+        self.assertEqual(rules.proof_line(jeans, {"size": MATCH}, {"size": "tag"}), "Size 32x34 (tag)")
+        letter = spec.normalize_spec({"model": "chore jacket", "size": "L"})
+        self.assertEqual(rules.proof_line(letter, {"size": MATCH}, {"size": "tag"}), "Size L (tag)")
 
 
 class Links(unittest.TestCase):
@@ -229,6 +330,27 @@ class Links(unittest.TestCase):
         self.assertEqual(parse_link("https://www.ebay.com/usr/someone").kind, "other_ebay")
         self.assertEqual(parse_link("").kind, "not_ebay")
         self.assertFalse(parse_link("https://notebay.com/itm/256012345678").is_ebay)
+        self.assertFalse(parse_link("https://www.ebay.com.evil.example/itm/256012345678").is_ebay)
+
+    def test_every_ebay_site_is_an_ebay_link(self):
+        listed = {"ebay.com.sg": "EBAY_SG", "ebay.com.hk": "EBAY_HK", "ebay.com.my": "EBAY_MY", "ebay.ph": "EBAY_PH"}
+        for domain, marketplace in listed.items():
+            link = parse_link("https://www.%s/itm/256012345678" % domain)
+            self.assertEqual((link.kind, link.legacy_item_id, link.marketplace),
+                             ("item", "256012345678", marketplace), domain)
+        # A site with no marketplace id in the table is read the same way, and is never "not eBay".
+        sweden = parse_link("https://www.ebay.se/itm/256012345678")
+        self.assertEqual((sweden.kind, sweden.legacy_item_id, sweden.marketplace), ("item", "256012345678", None))
+        self.assertEqual(parse_link("https://www.ebay.se/sch/i.html?_nkw=dunk").search, {"q": "dunk"})
+        self.assertEqual(parse_link("https://www.ebay.se/help/home").kind, "other_ebay")
+
+    def test_a_trailing_dot_on_the_host_changes_nothing(self):
+        link = parse_link("https://www.ebay.com./itm/256012345678")
+        self.assertEqual((link.kind, link.legacy_item_id, link.marketplace), ("item", "256012345678", "EBAY_US"))
+        self.assertEqual(parse_link("https://www.ebay.co.uk./itm/256012345678").marketplace, "EBAY_GB")
+        self.assertEqual(parse_link("ebay.com./itm/256012345678").kind, "item")
+        self.assertEqual(parse_link("https://ebay.us./m/abc123").kind, "short")
+        self.assertEqual(parse_link("https://www.nike.com./t/dunk-low").kind, "not_ebay")
 
     def test_canonical_item_url(self):
         self.assertEqual(canonical_item_url("256012345678"), "https://www.ebay.com/itm/256012345678")

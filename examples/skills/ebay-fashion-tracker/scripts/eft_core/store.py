@@ -19,6 +19,8 @@ from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Set,
 SCHEMA_VERSION = 1
 
 CANDIDATE_STATES = ("pending", "parked", "maybe", "alerted", "rejected", "unavailable", "ended")
+# Candidate codes run A1 to A99, then B1 to B99, and so on through the alphabet.
+CODES_PER_LETTER = 99
 ALERT_STATUSES = ("pending", "held", "sent", "failed", "dropped")
 
 SCHEMA = """
@@ -153,6 +155,33 @@ def parse_iso(text: Optional[str]) -> Optional[datetime]:
     return moment.astimezone(timezone.utc)
 
 
+def code_for(counter: int) -> str:
+    """The short code of the nth candidate: A1..A99, B1..Z99, then A100..A198, B100.. and so on.
+
+    After Z99 the numbers carry on instead of starting again at A1, so however many
+    candidates a store has seen, no two of them share a code.
+    """
+    block, offset = divmod(counter - 1, CODES_PER_LETTER)
+    lap, letter = divmod(block, 26)
+    return "%s%d" % (chr(ord("A") + letter), lap * CODES_PER_LETTER + offset + 1)
+
+
+def _keep_private(db_path: str) -> None:
+    """Make sure the database file exists and that only its owner can read it.
+
+    The file holds listing snapshots and the cached eBay application token. It is created
+    here, before SQLite opens it, because SQLite gives the -wal and -shm files it writes
+    beside a database the mode of the database itself. Files left by an earlier run are
+    tightened too. A filesystem that has no permissions to set is left as it is.
+    """
+    os.close(os.open(db_path, os.O_CREAT | os.O_RDWR, 0o600))
+    for suffix in ("", "-wal", "-shm"):
+        try:
+            os.chmod(db_path + suffix, 0o600)
+        except OSError:
+            pass
+
+
 def _encode(column: str, value: Any) -> Any:
     if column in _JSON_COLUMNS and value is not None:
         return json.dumps(value, sort_keys=True)
@@ -185,8 +214,7 @@ class Store:
         if path != ":memory:":
             Path(path).parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             with suppress(OSError):
-                os.close(os.open(path, os.O_RDWR | os.O_CREAT, 0o600))
-                os.chmod(path, 0o600)
+                _keep_private(path)
         self.conn = sqlite3.connect(path)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
@@ -295,10 +323,20 @@ class Store:
     # ---- candidates --------------------------------------------------------
 
     def _next_code(self) -> str:
-        counter = int(self.kv_get("code_counter", 0)) + 1
+        """Allocate the code for a new candidate: one that no stored candidate holds.
+
+        A code is what the user reads off a card and types back (`eft star A17`), so it must
+        never come to mean a second listing. The counter only moves forward, and a code that
+        is still held (in a store whose counter was lost or reset) is skipped.
+        """
+        counter = int(self.kv_get("code_counter", 0))
+        while True:
+            counter += 1
+            code = code_for(counter)
+            if self.conn.execute("SELECT 1 FROM candidate WHERE code = ? LIMIT 1", (code,)).fetchone() is None:
+                break
         self.kv_set("code_counter", counter)
-        letter = chr(ord("A") + ((counter - 1) // 99) % 26)
-        return "%s%d" % (letter, ((counter - 1) % 99) + 1)
+        return code
 
     def seen_item_ids(self, watch_id: int) -> Set[str]:
         rows = self.conn.execute("SELECT item_id FROM candidate WHERE watch_id = ?", (watch_id,)).fetchall()
@@ -311,8 +349,14 @@ class Store:
         return self._one("SELECT * FROM candidate WHERE id = ?", (candidate_id,))
 
     def get_candidate_by_code(self, code: str) -> Optional[Dict[str, Any]]:
+        """Look a candidate up by the code on its card.
+
+        Codes are unique as they are handed out now. A store written before that was so can
+        hold the same code twice, and then the tracked row (the one with a card) is the one meant.
+        """
         return self._one(
-            "SELECT * FROM candidate WHERE upper(code) = upper(?) ORDER BY id DESC LIMIT 1", (code.strip(),)
+            "SELECT * FROM candidate WHERE upper(code) = upper(?) ORDER BY tracked DESC, id DESC LIMIT 1",
+            (code.strip(),),
         )
 
     def upsert_candidate(self, watch_id: int, item_id: str, state: str, **fields: Any) -> Dict[str, Any]:
@@ -391,9 +435,19 @@ class Store:
                 self._exec("UPDATE alert SET payload = ? WHERE id = ?", (_encode("payload", kept), alert["id"]))
 
     def purge_expired(self, now: Optional[datetime] = None) -> int:
-        """Delete candidates whose purge date has passed. Returns how many were removed."""
+        """Delete candidates whose purge date has passed. Returns how many were removed.
+
+        A candidate with a sent message that still shows listing data is kept for now.
+        Deleting it would delete the record of where that message is, and the message could
+        then never be rewritten. It goes on the first purge after its messages are stripped.
+        """
         cutoff = iso(now or self.clock())
-        cursor = self._exec("DELETE FROM candidate WHERE purge_at IS NOT NULL AND purge_at <= ?", (cutoff,))
+        cursor = self._exec(
+            "DELETE FROM candidate WHERE purge_at IS NOT NULL AND purge_at <= ? AND id NOT IN ("
+            " SELECT alert.candidate_id FROM message JOIN alert ON alert.id = message.alert_id"
+            " WHERE message.has_listing_data = 1 AND alert.candidate_id IS NOT NULL)",
+            (cutoff,),
+        )
         return int(cursor.rowcount)
 
     # ---- funnel trace ------------------------------------------------------
@@ -520,7 +574,11 @@ class Store:
         )
 
     def refresh_message(self, message_id: int, as_of: str) -> None:
-        """A message was rewritten with fresh data; restart its six-hour clock."""
+        """Put a message back among those that show listing data, read at `as_of`.
+
+        For a message that was stripped and then needs another rewrite: its listing ended
+        and the "Ended" rewrite did not get through, so the next expiry run must retry it.
+        """
         self._exec(
             "UPDATE message SET as_of = ?, expired_at = NULL, has_listing_data = 1 WHERE id = ?", (as_of, message_id)
         )

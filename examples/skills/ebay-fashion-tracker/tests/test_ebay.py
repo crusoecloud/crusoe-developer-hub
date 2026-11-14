@@ -15,6 +15,7 @@ from eft_core.errors import (
     EbayGroupRequired,
     EbayNotFound,
     EbayUnavailable,
+    EbayUnreachable,
 )
 from eft_core.http import FakeTransport, Response, TransportError, json_response
 
@@ -320,14 +321,32 @@ class Token(EbayTestCase):
     def test_other_token_failures(self):
         for answer, expected in (
             (json_response({"error": "server_error"}, status=500), EbayUnavailable),
-            (TransportError("POST api.ebay.com failed: timed out"), EbayUnavailable),
-            (Response(status=200, body=b"<html>sign in to the wifi</html>"), EbayUnavailable),
+            (TransportError("POST api.ebay.com failed: timed out"), EbayUnreachable),
+            (Response(status=200, body=b"<html>sign in to the wifi</html>"), EbayUnreachable),
             (json_response({"token_type": "Application Access Token"}), EbayError),
         ):
             self.api.token_answer = answer
             with self.assertRaises(EbayError) as caught:
                 self.client.token()
             self.assertIs(type(caught.exception), expected)
+
+    def test_a_browse_call_that_gets_no_token_is_unreachable_whatever_the_token_endpoint_said(self):
+        for answer, status in (
+            (json_response({"error": "server_error"}, status=500), 500),
+            (TransportError("POST api.ebay.com failed: timed out"), None),
+            (json_response({"token_type": "Application Access Token"}), 200),
+        ):
+            self.api.token_answer = answer
+            with self.assertRaises(EbayError) as caught:
+                self.client.get_item(ITEM_ID)
+            self.assertIs(type(caught.exception), EbayUnreachable, "nothing was asked about the listing")
+            self.assertEqual(caught.exception.status, status)
+            self.assertTrue(str(caught.exception).startswith("eBay token request"))
+        self.assertEqual(self.api.browse_calls(), [])
+        self.assertEqual(self.client.calls_today(), 0)
+        self.api.token_answer = json_response({"error": "invalid_client"}, status=401)
+        with self.assertRaises(EbayAuthError):
+            self.client.get_item(ITEM_ID)
 
     def test_mints_are_ledgered_apart_from_browse_calls(self):
         self.client.token()
@@ -752,7 +771,7 @@ class Errors(EbayTestCase):
             (400, 11001, EbayNotFound),         # the id decides, whatever the status
             (404, 99999, EbayNotFound),         # the status decides when the id says nothing
             (400, 11004, EbayUnavailable),      # not available for purchase
-            (429, 2001, EbayUnavailable),
+            (429, 2001, EbayUnreachable),       # rate limited: says nothing about the listing
             (500, 2003, EbayUnavailable),
             (503, 99999, EbayUnavailable),
             (401, 1001, EbayAuthError),
@@ -772,7 +791,7 @@ class Errors(EbayTestCase):
 
     def test_status_alone_is_enough_when_the_body_is_not_json(self):
         for status, expected in ((401, EbayAuthError), (403, EbayAuthError), (404, EbayNotFound),
-                                 (429, EbayUnavailable), (502, EbayUnavailable), (400, EbayError)):
+                                 (429, EbayUnreachable), (502, EbayUnavailable), (400, EbayError)):
             self.api.fail(Response(status=status, body=b"<html>Service Unavailable</html>"))
             error = self.failure()
             self.assertIs(type(error), expected, status)
@@ -801,18 +820,24 @@ class Errors(EbayTestCase):
         self.assertIs(type(error), EbayGroupRequired)
         self.assertIsNone(error.item_group_id)
 
-    def test_network_failure_is_unavailable(self):
+    def test_network_failure_is_unreachable(self):
         self.api.fail(TransportError("GET api.ebay.com failed: timed out"))
         error = self.failure()
-        self.assertIs(type(error), EbayUnavailable)
+        self.assertIs(type(error), EbayUnreachable)
+        self.assertIsInstance(error, EbayUnavailable, "still something to try again later")
         self.assertIsNone(error.status)
         self.assertEqual(str(error), "eBay item lookup failed: GET api.ebay.com failed: timed out")
 
-    def test_success_status_without_json_is_unavailable(self):
+    def test_success_status_without_json_is_unreachable(self):
         self.api.fail(Response(status=200, body=b"<html>sign in to the wifi</html>"))
-        self.assertIs(type(self.failure()), EbayUnavailable)
+        self.assertIs(type(self.failure()), EbayUnreachable)
         self.api.fail(Response(status=200, body=b"[]"))
-        self.assertIs(type(self.failure()), EbayUnavailable)
+        self.assertIs(type(self.failure()), EbayUnreachable)
+
+    def test_an_answer_about_the_listing_is_not_unreachable(self):
+        for status, error_id in ((400, 11004), (404, 11001), (500, 2003)):
+            self.api.reply(error_body(error_id, "The request could not be completed."), status)
+            self.assertNotIsInstance(self.failure(), EbayUnreachable, (status, error_id))
 
     def test_search_errors_are_mapped_the_same_way(self):
         self.api.reply(error_body(12001, "The call must have a valid 'q' parameter."), 400)
