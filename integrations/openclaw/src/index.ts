@@ -11,8 +11,22 @@ import {
   findCrusoeStaticModel,
 } from "./models.js";
 
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
 function isCanonicalBaseUrl(baseUrl: string): boolean {
   return baseUrl.replace(/\/+$/, "") === CRUSOE_BASE_URL;
+}
+
+function isEncryptedOrLocal(baseUrl: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    return false;
+  }
+  return (
+    url.protocol === "https:" || (url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname))
+  );
 }
 
 export default definePluginEntry({
@@ -52,6 +66,9 @@ export default definePluginEntry({
             ([providerId]) => providerId.trim().toLowerCase() === CRUSOE_PROVIDER_ID,
           )?.[1];
           const baseUrl = configuredProvider?.baseUrl?.trim() || CRUSOE_BASE_URL;
+          if (!isEncryptedOrLocal(baseUrl)) {
+            return null;
+          }
           const rows = isCanonicalBaseUrl(baseUrl)
             ? await fetchCrusoeModelRows(discoveryApiKey ?? apiKey, ctx.signal)
             : undefined;

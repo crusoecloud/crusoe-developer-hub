@@ -89,10 +89,12 @@ Models that appear only in the live list are sent no `reasoning_effort` and reas
 
 Setting `models.providers.crusoe.baseUrl` routes chat requests to that URL. The plugin then serves the reviewed rows and does not call the model list, so the key is listed only against the Crusoe host.
 
+The URL must use `https`. Plain `http` is accepted only for `localhost`, `127.0.0.1` and `[::1]`; with any other `http` URL the plugin offers no catalog, so the key is never paired with an unencrypted endpoint.
+
 ## Develop
 
 ```bash
-npm install
+npm ci
 npm run build
 npm test
 npm run validate

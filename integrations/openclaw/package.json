@@ -38,10 +38,13 @@
     }
   },
   "devDependencies": {
-    "clawhub": "latest",
-    "openclaw": "latest",
+    "clawhub": "0.25.1",
+    "openclaw": "2026.11.3",
     "typescript": "7.0.2",
-    "vitest": "^3.2.0"
+    "vitest": "^5.1.0"
+  },
+  "overrides": {
+    "zod": "^4.6.6"
   },
   "openclaw": {
     "extensions": [

@@ -154,6 +154,33 @@ describe("crusoe provider plugin", () => {
     expect(catalog?.models).toEqual(CRUSOE_STATIC_MODELS);
   });
 
+  it.each(["http://proxy.example.test/v1", "ftp://proxy.example.test/v1", "proxy.example.test/v1"])(
+    "offers no catalog for the unencrypted or malformed base URL %s",
+    async (baseUrl) => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      const result = await registerProvider().catalog?.run(
+        catalogContext({ apiKey: "fixture-key", providers: { crusoe: { baseUrl, models: [] } } }),
+      );
+      expect(result).toBeNull();
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["http://localhost:4000/v1", "http://127.0.0.1:4000/v1", "http://[::1]:4000/v1"])(
+    "accepts the plain-http base URL %s on this machine",
+    async (baseUrl) => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      const catalog = await runCatalog(
+        registerProvider(),
+        catalogContext({ apiKey: "fixture-key", providers: { crusoe: { baseUrl, models: [] } } }),
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(catalog?.baseUrl).toBe(baseUrl);
+    },
+  );
+
   it("serves the reviewed rows as the static catalog", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

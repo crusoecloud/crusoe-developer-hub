@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { projectCrusoeModels } from "./live-models.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { fetchCrusoeModelRows, projectCrusoeModels } from "./live-models.js";
 import { CRUSOE_DEFAULT_MODEL_ID, findCrusoeStaticModel } from "./models.js";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 function liveRow(overrides: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -119,5 +123,64 @@ describe("Crusoe live model projection", () => {
     ]);
     expect(models).toHaveLength(1);
     expect(models[0]?.contextWindow).toBe(4096);
+  });
+
+  it("drops ids that are not plain model names", () => {
+    const models = projectCrusoeModels([
+      liveRow({ id: "example/plain_name-1.0:free@v2+x" }),
+      liveRow({ id: "example/\u001b[31mred" }),
+      liveRow({ id: "example/two words" }),
+      liveRow({ id: "/leading-slash" }),
+      liveRow({ id: `example/${"a".repeat(128)}` }),
+    ]);
+    expect(models.map((model) => model.id)).toEqual(["example/plain_name-1.0:free@v2+x"]);
+  });
+
+  it("reads no more than the first 500 rows", () => {
+    const rows = Array.from({ length: 600 }, (_, index) => liveRow({ id: `example/model-${index}` }));
+    const models = projectCrusoeModels(rows);
+    expect(models).toHaveLength(500);
+    expect(models.at(-1)?.id).toBe("example/model-499");
+  });
+});
+
+describe("Crusoe live model listing", () => {
+  const listing = (rows: unknown[]) => JSON.stringify({ object: "list", data: rows });
+
+  it("returns the listed rows", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(listing([{ id: "openai/gpt-oss-120b" }]))),
+    );
+    expect(await fetchCrusoeModelRows("fixture-key")).toEqual([{ id: "openai/gpt-oss-120b" }]);
+  });
+
+  it("stops reading a body that grows past the size limit", async () => {
+    const chunk = new Uint8Array(1024 * 1024).fill(0x20);
+    let sent = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        sent += 1;
+        controller.enqueue(chunk);
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(body)),
+    );
+    expect(await fetchCrusoeModelRows("fixture-key")).toBeUndefined();
+    expect(sent).toBeLessThan(8);
+  });
+
+  it("does not read a body whose declared length is over the limit", async () => {
+    const response = new Response(listing([]), {
+      headers: { "content-length": String(4 * 1024 * 1024 + 1) },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => response),
+    );
+    expect(await fetchCrusoeModelRows("fixture-key")).toBeUndefined();
+    expect(response.bodyUsed).toBe(false);
   });
 });

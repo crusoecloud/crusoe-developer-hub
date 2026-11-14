@@ -8,6 +8,8 @@ import {
 
 const LIST_TIMEOUT_MS = 5_000;
 const LIST_MAX_BYTES = 4 * 1024 * 1024;
+const LIST_MAX_ROWS = 500;
+const MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -84,16 +86,41 @@ function projectRow(row: Record<string, unknown>, id: string): CrusoeModel {
 
 export function projectCrusoeModels(rows: readonly unknown[]): CrusoeModel[] {
   const models = new Map<string, CrusoeModel>();
-  for (const row of rows) {
+  for (const row of rows.slice(0, LIST_MAX_ROWS)) {
     if (!isRecord(row) || !isPublicChatRow(row)) {
       continue;
     }
     const id = typeof row.id === "string" ? row.id.trim() : "";
-    if (id && !models.has(id)) {
+    if (MODEL_ID_PATTERN.test(id) && !models.has(id)) {
       models.set(id, projectRow(row, id));
     }
   }
   return [...models.values()];
+}
+
+async function readBoundedText(response: Response): Promise<string | undefined> {
+  if (Number(response.headers.get("content-length") ?? "") > LIST_MAX_BYTES) {
+    return undefined;
+  }
+  const reader = response.body?.getReader();
+  if (!reader) {
+    return undefined;
+  }
+  const decoder = new TextDecoder();
+  let received = 0;
+  let text = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {
+      return text + decoder.decode();
+    }
+    received += value.byteLength;
+    if (received > LIST_MAX_BYTES) {
+      await reader.cancel();
+      return undefined;
+    }
+    text += decoder.decode(value, { stream: true });
+  }
 }
 
 export async function fetchCrusoeModelRows(
@@ -110,8 +137,8 @@ export async function fetchCrusoeModelRows(
     if (!response.ok) {
       return undefined;
     }
-    const text = await response.text();
-    if (text.length > LIST_MAX_BYTES) {
+    const text = await readBoundedText(response);
+    if (text === undefined) {
       return undefined;
     }
     const body: unknown = JSON.parse(text);
