@@ -284,6 +284,11 @@ class PriceAndTitleRules(unittest.TestCase):
         margiela = spec.normalize_spec({"brand": "Maison Margiela", "model": "Replica", "must_not": ["replica"]})
         self.assertIsNone(rules.title_conflict(margiela, "Maison Margiela Replica GAT sneakers 43"))
 
+    def test_a_kids_size_in_the_title_is_ignored_when_department_does_not_apply(self):
+        title = "Nike Dunk Low Panda GS 6Y"
+        self.assertEqual(rules.title_conflict(dunk_spec(), title), "mismatch:department")
+        self.assertIsNone(rules.title_conflict(dunk_spec(requirements={"department": "na"}), title))
+
     def test_trap_words_are_not_banned_at_stage_zero(self):
         s = dunk_spec()
         for title in ("Nike Dunk Low Panda replica box", "Lot of 2 Nike Dunk Low", "Nike Dunk Low custom"):

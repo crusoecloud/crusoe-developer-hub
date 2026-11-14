@@ -409,9 +409,9 @@ def title_conflict(spec: Mapping[str, Any], title: str) -> Optional[str]:
         if re.search(r"(?<![a-z0-9])%s(?![a-z0-9])" % re.escape(needle), low):
             return "must_not:" + needle
     wanted = spec.get("department")
+    # A watch whose department is marked "not applicable" is not judged on it, here or later.
     applies = (spec.get("requirements") or {}).get("department", "na") != "na"
-    if applies and wanted in ("men", "women", "unisex") and has_kids_markers(title):
-    if wanted in ("men", "women", "unisex") and _kids_size_in_title(spec, title):
+    if applies and wanted in ("men", "women", "unisex") and _kids_size_in_title(spec, title):
         return "mismatch:department"
     return None
 
