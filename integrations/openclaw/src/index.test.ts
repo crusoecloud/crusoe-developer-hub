@@ -37,7 +37,8 @@ function catalogContext(params: {
   return {
     config: { models: { providers: params.providers ?? {} } },
     env: {},
-    resolveProviderApiKey: () => credential,
+    resolveProviderApiKey: (providerId?: string) =>
+      providerId === "crusoe" ? credential : { apiKey: undefined, discoveryApiKey: undefined },
     resolveProviderAuth: () => ({ ...credential, mode: "api_key", source: "env" }),
   } as ProviderCatalogContext;
 }
