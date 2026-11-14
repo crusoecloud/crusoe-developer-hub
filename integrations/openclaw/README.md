@@ -102,6 +102,8 @@ npm run validate
 
 `npm run validate` builds the plugin and runs `clawhub package validate . --out .clawhub-validation`, the same inspection ClawHub applies on publish.
 
+The build and the tests do not install OpenClaw, so the lockfile holds only the build, test and validation tools. `src/openclaw-plugin-sdk.d.ts` declares the parts of `openclaw/plugin-sdk` that the plugin uses, and `test/sdk/` stands in for the two SDK functions it calls. `npm run validate` is the check against a real release: it inspects the plugin against the latest published OpenClaw. When the plugin starts using more of the SDK, or `openclaw.build.openclawVersion` moves, update the declarations and the stand-ins to match.
+
 The reviewed rows live in `src/models.ts` and are mirrored in `openclaw.plugin.json`. A test fails when they drift.
 
 ## Publish

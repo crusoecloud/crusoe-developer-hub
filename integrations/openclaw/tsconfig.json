@@ -10,6 +10,7 @@
     "skipLibCheck": true
   },
   "include": [
-    "src/index.ts"
+    "src/index.ts",
+    "src/openclaw-plugin-sdk.d.ts"
   ]
 }
