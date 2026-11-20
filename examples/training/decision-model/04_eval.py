@@ -43,7 +43,7 @@ async def run(model: str, rows, concurrency: int):
 def nll(results, temperature):
     total = 0.0
     for r in results:
-        logits = {l: r["logprobs"].get(l, -30.0) / temperature for l in LABELS}
+        logits = {l: r["debug"]["logprobs"].get(l, -30.0) / temperature for l in LABELS}
         peak = max(logits.values())
         log_z = peak + math.log(sum(math.exp(v - peak) for v in logits.values()))
         total -= logits[r["gold"]] - log_z
@@ -57,7 +57,7 @@ def fit_temperature(results) -> float:
 
 
 def reprobs(r, temperature):
-    logits = {l: r["logprobs"].get(l, -30.0) / temperature for l in LABELS}
+    logits = {l: r["debug"]["logprobs"].get(l, -30.0) / temperature for l in LABELS}
     peak = max(logits.values())
     w = {l: math.exp(v - peak) for l, v in logits.items()}
     z = sum(w.values())
@@ -110,8 +110,21 @@ def summarize(results, temperature):
         "abstention": abstain,
         "per_class_accuracy": {l: statistics.mean(p[1] for p in preds if p[3] == l) for l in LABELS},
         "latency_ms": {"p50": lat[n // 2], "p95": lat[int(n * 0.95)], "mean": statistics.mean(lat)},
-        "mean_unassigned_mass": statistics.mean(r["unassigned"] for r in results),
+        "mean_unassigned_mass": statistics.mean(r["debug"]["unassigned"] for r in results),
     }
+
+
+def plain_summary(out, threshold=0.9):
+    cal = out["calibrated"]
+    row = next((r for r in cal["abstention"] if r["threshold"] == threshold and r["accuracy"] is not None), None)
+    lines = [f"In plain terms ({cal['n']:,} stories the model never saw):",
+             f"  - It sorted {cal['accuracy']:.1%} of them correctly."]
+    if row:
+        lines.append(f"  - Acting only on answers it is at least {threshold:.0%} sure of covers {row['coverage']:.1%} of "
+                     f"stories, and {row['accuracy']:.1%} of those are right. Send the rest to a person.")
+    lines.append(f"  - Its confidence can be trusted: on average it is off by {cal['ece'] * 100:.1f} points "
+                 f"(ECE {cal['ece']:.3f}, lower is better).")
+    return "\n".join(lines)
 
 
 def main():
@@ -127,6 +140,8 @@ def main():
     temperature = fit_temperature(val)  # fit on validation, report on test: no leakage
     out = {"model": a.model, "raw": summarize(test, 1.0), "calibrated": summarize(test, temperature)}
     Path(a.out).write_text(json.dumps(out, indent=2))
+    print(plain_summary(out))
+    print("\nDetails:")
     for name in ("raw", "calibrated"):
         s = out[name]
         print(f"{name:>10}: acc {s['accuracy']:.3f}  ECE {s['ece']:.3f}  mean conf {s['mean_confidence']:.3f}  (T={s['temperature']})")

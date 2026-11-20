@@ -10,11 +10,12 @@ distribution over the labels: one round trip, one generated token, exact.
 
     export CRUSOE_API_KEY='...'
     python decision_model.py agnews-decider "Stocks rallied after the Fed held rates."
+    python decision_model.py agnews-decider --threshold 0.95 "Article one." "Article two."
 """
+import argparse
 import asyncio
 import math
 import os
-import sys
 
 import httpx
 
@@ -49,7 +50,7 @@ def probabilities(top_logprobs: list[dict], labels: list[str] = LABELS, temperat
 
     Softmax over the label tokens only, so the answer always sums to 1. `temperature` > 1
     softens an over-confident SFT model (fit it on validation data: see 04_eval.py).
-    `unassigned` is the probability mass the model put on anything that is not a label.
+    `debug.unassigned` is the probability mass the model put on anything that is not a label.
     """
     seen = {}  # whitespace variants (" Business", "\nBusiness") are the same decision: add their probabilities
     for t in top_logprobs:
@@ -58,19 +59,19 @@ def probabilities(top_logprobs: list[dict], labels: list[str] = LABELS, temperat
     present = [l for l in labels if l in seen]
     if not present:
         return {"choice": None, "confidence": 0.0, "probabilities": dict.fromkeys(labels, 0.0),
-                "logprobs": {}, "unassigned": 1.0}
+                "debug": {"logprobs": {}, "unassigned": 1.0}}
     peak = max(seen[l] for l in present)
     weights = {l: math.exp((seen[l] - peak) / temperature) for l in present}
     total = sum(weights.values())
     probs = {l: weights.get(l, 0.0) / total for l in labels}
     choice = max(probs, key=probs.get)
     return {"choice": choice, "confidence": probs[choice], "probabilities": probs,
-            "logprobs": {l: seen[l] for l in present},  # raw, for fitting a calibration temperature
-            "unassigned": max(0.0, 1.0 - sum(math.exp(seen[l]) for l in present))}
+            "debug": {"logprobs": {l: seen[l] for l in present},  # raw, for fitting a calibration temperature
+                      "unassigned": max(0.0, 1.0 - sum(math.exp(seen[l]) for l in present))}}
 
 
 async def decide(client: httpx.AsyncClient, model: str, article: str, temperature: float = 1.0) -> dict:
-    """One request to the deployment -> {choice, confidence, probabilities, unassigned, logprobs}."""
+    """One request to the deployment -> {choice, confidence, probabilities, debug}."""
     resp = await client.post("/chat/completions", json={
         "model": model,
         "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": article}],
@@ -97,15 +98,33 @@ async def decide_many(client: httpx.AsyncClient, model: str, articles: list[str]
     return await asyncio.gather(*(one(a) for a in articles))
 
 
+def render(article: str, out: dict, threshold: float = 0.9, bar_width: int = 20) -> str:
+    """A decision as a ranked bar chart plus a plain verdict: act on it, or send it to a person."""
+    head = f'"{article[:70]}"'
+    if out["choice"] is None:
+        return head + "\n  None of the labels was scored. Is this the fine-tuned deployment?"
+    width = max(len(l) for l in out["probabilities"])
+    lines = [head]
+    for label, p in sorted(out["probabilities"].items(), key=lambda kv: -kv[1]):
+        bar = "█" * round(p * bar_width) or ("▏" if p > 0 else "")
+        mark = "  <- answer" if label == out["choice"] else ""
+        lines.append(f"  {label:<{width}}  {bar:<{bar_width}} {p:>4.0%}{mark}")
+    if out["confidence"] >= threshold:
+        lines.append(f"  Confident (at least {threshold:.0%}): act on it.")
+    else:
+        lines.append(f"  Unsure (under {threshold:.0%}): send it to a person.")
+    return "\n".join(lines)
+
+
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        raise SystemExit(__doc__)
-    model, articles = sys.argv[1], sys.argv[2:]
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("model", help="deployment alias, e.g. agnews-decider")
+    parser.add_argument("articles", nargs="+", help="one or more texts to decide on")
+    parser.add_argument("--threshold", type=float, default=0.9, help="confidence needed to act without a person (default 0.9)")
+    args = parser.parse_args()
 
     async def main():
         async with inference_client() as client:
-            for article, out in zip(articles, await decide_many(client, model, articles)):
-                ranked = sorted(out["probabilities"].items(), key=lambda kv: -kv[1])
-                print(f"{article[:70]!r}\n  -> {out['choice']} ({out['confidence']:.3f})  "
-                      + "  ".join(f"{l} {p:.3f}" for l, p in ranked) + f"  [off-label mass {out['unassigned']:.4f}]")
+            outs = await decide_many(client, args.model, args.articles)
+        print("\n\n".join(render(a, o, args.threshold) for a, o in zip(args.articles, outs)))
     asyncio.run(main())
