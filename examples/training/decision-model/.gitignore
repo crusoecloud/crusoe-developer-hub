@@ -1,0 +1,5 @@
+# Local generated data, downloads, and run state
+/data/
+/run_state.json
+/results.json
+/base_results.json

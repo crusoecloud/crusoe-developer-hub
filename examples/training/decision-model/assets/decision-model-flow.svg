@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 330" role="img" aria-label="Left panel, general LLM: it writes a stream of words, The story is about the stock market, which rallied as investors, and keeps going. Middle: fine-tune so the answer is one label, then read one step. Right panel, decision model: Business 97 percent, World 2, Technology 1, Sports 0.">
+      <defs>
+        <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M20 0H0V20" fill="none" stroke="#141414" stroke-width="1"/></pattern>
+        <marker id="head" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10z" fill="#ceeb13"/></marker>
+      </defs>
+      <rect width="920" height="330" fill="#010101"/>
+      <rect width="920" height="330" fill="url(#grid)"/>
+      <g font-family="ABC Diatype Mono, Abcdiatypemono, DM Mono, ui-monospace, monospace">
+        <!-- left: general LLM -->
+        <rect x="20" y="24" width="320" height="282" rx="6" fill="#0d0d0d" stroke="#2a2a2a"/>
+        <text x="40" y="54" font-size="12" letter-spacing="1" fill="#a3a3a3">GENERAL LLM · CHAT</text>
+        <g font-size="14" fill="#ededed">
+          <rect x="40" y="76" width="43" height="30" rx="3" fill="#181717" stroke="#2a2a2a"/><text x="48" y="96">The</text>
+          <rect x="91" y="76" width="61" height="30" rx="3" fill="#181717" stroke="#2a2a2a"/><text x="99" y="96">story</text>
+          <rect x="160" y="76" width="34" height="30" rx="3" fill="#181717" stroke="#2a2a2a"/><text x="168" y="96">is</text>
+          <rect x="202" y="76" width="61" height="30" rx="3" fill="#181717" stroke="#2a2a2a"/><text x="210" y="96">about</text>
+          <rect x="271" y="76" width="43" height="30" rx="3" fill="#181717" stroke="#2a2a2a"/><text x="279" y="96">the</text>
+          <rect x="40" y="114" width="61" height="30" rx="3" fill="#181717" stroke="#2a2a2a"/><text x="48" y="134">stock</text>
+          <rect x="109" y="114" width="79" height="30" rx="3" fill="#181717" stroke="#2a2a2a"/><text x="117" y="134">market,</text>
+          <rect x="196" y="114" width="61" height="30" rx="3" fill="#181717" stroke="#2a2a2a"/><text x="204" y="134">which</text>
+          <rect x="40" y="152" width="79" height="30" rx="3" fill="#181717" stroke="#2a2a2a"/><text x="48" y="172">rallied</text>
+          <rect x="127" y="152" width="34" height="30" rx="3" fill="#181717" stroke="#2a2a2a"/><text x="135" y="172">as</text>
+          <rect x="169" y="152" width="97" height="30" rx="3" fill="#181717" stroke="#2a2a2a"/><text x="177" y="172">investors</text>
+          <text x="44" y="210" fill="#565859">…</text>
+          <rect x="66" y="196" width="9" height="18" fill="#a3a3a3"/>
+        </g>
+        <line x1="40" y1="250" x2="320" y2="250" stroke="#2a2a2a"/>
+        <text x="40" y="276" font-size="12" fill="#565859">~40 steps · free text you still parse</text>
+
+        <!-- middle: the change -->
+        <line x1="356" y1="166" x2="562" y2="166" stroke="#ceeb13" stroke-width="2" marker-end="url(#head)"/>
+        <text x="459" y="112" text-anchor="middle" font-size="12" letter-spacing="1" fill="#ceeb13">01 · FINE-TUNE</text>
+        <text x="459" y="134" text-anchor="middle" font-size="12" fill="#a3a3a3">answer = one label</text>
+        <text x="459" y="204" text-anchor="middle" font-size="12" letter-spacing="1" fill="#ceeb13">02 · READ ONE STEP</text>
+        <text x="459" y="226" text-anchor="middle" font-size="12" fill="#a3a3a3">max_tokens=1 + logprobs</text>
+
+        <!-- right: decision model -->
+        <rect x="580" y="24" width="320" height="282" rx="6" fill="#0d0d0d" stroke="#2a2a2a"/>
+        <rect x="580" y="24" width="320" height="2" fill="#ceeb13"/>
+        <text x="600" y="54" font-size="12" letter-spacing="1" fill="#a3a3a3">DECISION MODEL</text>
+        <g font-size="14">
+          <text x="600" y="96" fill="#ededed">Business</text><text x="880" y="96" text-anchor="end" fill="#ceeb13">97%</text>
+          <rect x="600" y="106" width="280" height="8" fill="#181717"/><rect x="600" y="106" width="271.6" height="8" fill="#ceeb13"/>
+          <text x="600" y="144" fill="#a3a3a3">World</text><text x="880" y="144" text-anchor="end" fill="#a3a3a3">2%</text>
+          <rect x="600" y="154" width="280" height="8" fill="#181717"/><rect x="600" y="154" width="5.6" height="8" fill="#565859"/>
+          <text x="600" y="192" fill="#a3a3a3">Technology</text><text x="880" y="192" text-anchor="end" fill="#a3a3a3">1%</text>
+          <rect x="600" y="202" width="280" height="8" fill="#181717"/><rect x="600" y="202" width="2.8" height="8" fill="#565859"/>
+          <text x="600" y="240" fill="#a3a3a3">Sports</text><text x="880" y="240" text-anchor="end" fill="#a3a3a3">0%</text>
+          <rect x="600" y="250" width="280" height="8" fill="#181717"/>
+        </g>
+        <text x="600" y="290" font-size="12" fill="#565859">1 step · ~190 ms · odds that add up to 100%</text>
+      </g>
+    </svg>
