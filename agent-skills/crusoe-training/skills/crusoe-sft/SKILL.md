@@ -18,7 +18,7 @@ Collect and confirm with the user before any API call:
 
 - **Base model id** — list live availability with `GET /v1/public/models` and
   show options if the requested one is absent.
-- **Dataset path** — must be `.jsonl` or `.parquet`, ≤3 GB.
+- **Dataset path** — must be `.jsonl` or `.parquet`, ≤16 GiB via multipart upload.
 - **Goal** — what the model should learn; drives data-format review.
 - **Budget appetite** — offer a price estimate before creating the job.
 

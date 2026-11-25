@@ -5,7 +5,8 @@ docs.crusoe.ai `serverless-fine-tuning/fine-tune-a-model` (verified 2026-11-18).
 
 ## Hard constraints
 
-- **Format**: a single `.jsonl` or `.parquet` file, **3 GB or smaller**.
+- **Format**: a single `.jsonl` or `.parquet` file, **16 GiB or smaller** per
+  upload via multipart upload (max part size 128 MiB).
 - **Schema**: every row is a JSON object with a `messages` array of chat turns:
   `{"role": "system"|"user"|"assistant", "content": "..."}`.
 - **Loss masking**: loss is computed on **assistant turns only**; every other

@@ -49,7 +49,7 @@ Crusoe Intelligence Foundry serves open-weight models behind `https://api.infere
 | --- | --- | --- |
 | [Serverless Inference](https://docs.crusoecloud.com/serverless-inference/overview) | Variable or unpredictable traffic, early development, no capacity to manage | Per input and output token, with published rate limits |
 | [Self-Serve Deployments](https://docs.crusoecloud.com/self-serve-deployments/overview) | Sustained traffic that needs dedicated GPUs and predictable latency; profiles for responsiveness, throughput, or balanced | Per GPU-hour, replica count under your control |
-| [Serverless Fine-Tuning](https://docs.crusoecloud.com/serverless-fine-tuning/overview) | LoRA-based supervised fine-tuning from a JSONL or Parquet dataset up to 3 GB, then deploy the checkpoint | Per training job, deployment as above |
+| [Serverless Fine-Tuning](https://docs.crusoecloud.com/serverless-fine-tuning/overview) | LoRA-based supervised fine-tuning from a JSONL or Parquet dataset up to 16 GiB via multipart upload, then deploy the checkpoint | Per training job, deployment as above |
 
 Models available on Serverless Inference, as listed on the [available models page](https://docs.crusoecloud.com/serverless-inference/available-models) at the time of writing. Check that page for the current list and for models you can deploy or fine-tune.
 
